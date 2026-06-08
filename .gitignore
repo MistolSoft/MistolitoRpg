@@ -24,3 +24,11 @@ Thumbs.db
 # Legacy (si queda)
 firmware/_legacy/
 firmware/_old_backup/
+
+# Solo documentación en el repo
+firmware/
+server/
+assets/
+*.exe
+archive_vv6.0_windows-x64.zst
+eim_config.toml
