@@ -1,0 +1,337 @@
+{
+  "skills": [
+    {
+      "id": 500,
+      "name": "Cunning Action: Dash",
+      "description": "Use bonus action to double your movement speed for the turn",
+      "level_req": 2,
+      "profession_req": [3],
+      "stat_req": {"dex": 12},
+      "dp_cost": 4,
+      "success_dc": 7,
+      "type": "active",
+      "category": "cunning_action",
+      "intent_type": "support",
+      "uses_per": "at_will",
+      "action_type": "bonus_action",
+      "effect": {
+        "double_speed": true
+      }
+    },
+    {
+      "id": 501,
+      "name": "Cunning Action: Disengage",
+      "description": "Use bonus action to not provoke opportunity attacks this turn",
+      "level_req": 2,
+      "profession_req": [3],
+      "stat_req": {"dex": 12},
+      "dp_cost": 4,
+      "success_dc": 7,
+      "type": "active",
+      "category": "cunning_action",
+      "intent_type": "flee",
+      "uses_per": "at_will",
+      "action_type": "bonus_action",
+      "effect": {
+        "no_opportunity_attacks": true
+      }
+    },
+    {
+      "id": 502,
+      "name": "Cunning Action: Hide",
+      "description": "Use bonus action to attempt to hide with Dexterity (Stealth) check",
+      "level_req": 2,
+      "profession_req": [3],
+      "stat_req": {"dex": 12},
+      "dp_cost": 4,
+      "success_dc": 7,
+      "type": "active",
+      "category": "cunning_action",
+      "intent_type": "support",
+      "uses_per": "at_will",
+      "action_type": "bonus_action",
+      "effect": {
+        "hide_bonus_action": true
+      }
+    },
+    {
+      "id": 503,
+      "name": "Uncanny Dodge",
+      "description": "Use reaction to halve the damage from an attack that hits you",
+      "level_req": 5,
+      "profession_req": [3],
+      "stat_req": {"dex": 14},
+      "dp_cost": 8,
+      "success_dc": 10,
+      "type": "reaction",
+      "category": "feature",
+      "intent_type": "defend",
+      "uses_per": "at_will",
+      "action_type": "reaction",
+      "trigger": "attack_hits",
+      "effect": {
+        "halve_damage": true
+      }
+    },
+    {
+      "id": 504,
+      "name": "Stroke of Luck",
+      "description": "Turn a missed attack into a hit, or succeed on an ability check",
+      "level_req": 20,
+      "profession_req": [3],
+      "stat_req": {"dex": 18},
+      "dp_cost": 20,
+      "success_dc": 18,
+      "type": "active",
+      "category": "feature",
+      "intent_type": "attack",
+      "uses_per": "short_rest",
+      "uses_max": 1,
+      "effect": {
+        "turn_miss_to_hit": true,
+        "or_succeed_check": true
+      }
+    },
+    {
+      "id": 505,
+      "name": "Assassinate",
+      "description": "Advantage against creatures that haven't acted, crit on surprised creatures",
+      "level_req": 3,
+      "profession_req": [3],
+      "subclass_req": "assassin",
+      "stat_req": {"dex": 14},
+      "dp_cost": 10,
+      "success_dc": 12,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "attack",
+      "effect": {
+        "advantage_vs_not_acted": true,
+        "crit_on_surprised": true
+      }
+    },
+    {
+      "id": 506,
+      "name": "Infiltration Expertise",
+      "description": "Create a false identity with documents and contacts over 7 days and 25gp",
+      "level_req": 9,
+      "profession_req": [3],
+      "subclass_req": "assassin",
+      "stat_req": {"dex": 15},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "active",
+      "category": "subclass_feature",
+      "intent_type": "support",
+      "uses_per": "downtime",
+      "effect": {
+        "create_false_identity": true,
+        "days": 7,
+        "gold_cost": 25
+      }
+    },
+    {
+      "id": 507,
+      "name": "Impostor",
+      "description": "Duplicate another's handwriting, manner of speech, and behavior after 3 hours study",
+      "level_req": 13,
+      "profession_req": [3],
+      "subclass_req": "assassin",
+      "stat_req": {"dex": 16},
+      "dp_cost": 10,
+      "success_dc": 14,
+      "type": "active",
+      "category": "subclass_feature",
+      "intent_type": "support",
+      "uses_per": "downtime",
+      "effect": {
+        "duplicate_behavior": true,
+        "study_hours": 3
+      }
+    },
+    {
+      "id": 508,
+      "name": "Death Strike",
+      "description": "On failed CON save, attack counts as 4x damage (crit) vs surprised target",
+      "level_req": 17,
+      "profession_req": [3],
+      "subclass_req": "assassin",
+      "stat_req": {"dex": 17},
+      "dp_cost": 15,
+      "success_dc": 16,
+      "type": "active",
+      "category": "subclass_feature",
+      "intent_type": "attack",
+      "uses_per": "once_per_attack",
+      "effect": {
+        "fourx_damage_on_save_fail": true,
+        "save_type": "con",
+        "dc_formula": "8 + dex_mod + proficiency"
+      }
+    },
+    {
+      "id": 509,
+      "name": "Fast Hands",
+      "description": "Use Sleight of Hand, Use Object, or disarm traps as bonus action",
+      "level_req": 3,
+      "profession_req": [3],
+      "subclass_req": "thief",
+      "stat_req": {"dex": 14},
+      "dp_cost": 8,
+      "success_dc": 10,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "support",
+      "effect": {
+        "bonus_action_sleight_of_hand": true,
+        "bonus_action_use_object": true,
+        "bonus_action_disarm_traps": true
+      }
+    },
+    {
+      "id": 510,
+      "name": "Second-Story Work",
+      "description": "Climb at full speed, jump distance equals DEX score",
+      "level_req": 3,
+      "profession_req": [3],
+      "subclass_req": "thief",
+      "stat_req": {"dex": 14},
+      "dp_cost": 6,
+      "success_dc": 10,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "support",
+      "effect": {
+        "climb_full_speed": true,
+        "jump_distance_equals_dex": true
+      }
+    },
+    {
+      "id": 511,
+      "name": "Supreme Sneak",
+      "description": "Advantage on Stealth checks, can move at full speed while sneaking",
+      "level_req": 9,
+      "profession_req": [3],
+      "subclass_req": "thief",
+      "stat_req": {"dex": 15},
+      "dp_cost": 10,
+      "success_dc": 14,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "support",
+      "effect": {
+        "advantage_stealth": true,
+        "full_speed_sneak": true
+      }
+    },
+    {
+      "id": 512,
+      "name": "Use Magic Device",
+      "description": "Ignore all class, race, and level requirements for magic items",
+      "level_req": 13,
+      "profession_req": [3],
+      "subclass_req": "thief",
+      "stat_req": {"dex": 16},
+      "dp_cost": 12,
+      "success_dc": 15,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "magic",
+      "effect": {
+        "ignore_magic_item_requirements": true
+      }
+    },
+    {
+      "id": 513,
+      "name": "Thief's Reflexes",
+      "description": "Take two turns during first round: first at initiative, second at initiative-10",
+      "level_req": 17,
+      "profession_req": [3],
+      "subclass_req": "thief",
+      "stat_req": {"dex": 17},
+      "dp_cost": 15,
+      "success_dc": 16,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "support",
+      "effect": {
+        "two_turns_first_round": true
+      }
+    },
+    {
+      "id": 514,
+      "name": "Mage Hand Legerdemain",
+      "description": "Mage hand can stow objects, pick locks, pick pockets, use thieves' tools at range",
+      "level_req": 3,
+      "profession_req": [3],
+      "subclass_req": "arcane_trickster",
+      "stat_req": {"dex": 14, "int": 12},
+      "dp_cost": 10,
+      "success_dc": 12,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "magic",
+      "effect": {
+        "mage_hand_sleight_of_hand": true,
+        "mage_hand_pick_lock": true,
+        "mage_hand_pick_pocket": true,
+        "mage_hand_thieves_tools": true
+      }
+    },
+    {
+      "id": 515,
+      "name": "Magical Ambush",
+      "description": "If hidden from target, target has disadvantage on spell save",
+      "level_req": 9,
+      "profession_req": [3],
+      "subclass_req": "arcane_trickster",
+      "stat_req": {"dex": 15, "int": 14},
+      "dp_cost": 10,
+      "success_dc": 14,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "magic",
+      "effect": {
+        "disadvantage_spell_save_if_hidden": true
+      }
+    },
+    {
+      "id": 516,
+      "name": "Versatile Trickster",
+      "description": "Mage hand can grant advantage on attack rolls vs adjacent targets",
+      "level_req": 13,
+      "profession_req": [3],
+      "subclass_req": "arcane_trickster",
+      "stat_req": {"dex": 16, "int": 14},
+      "dp_cost": 12,
+      "success_dc": 15,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "attack",
+      "effect": {
+        "mage_hand_advantage_attacks": true
+      }
+    },
+    {
+      "id": 517,
+      "name": "Spell Thief",
+      "description": "Reaction to absorb a spell and cast it next turn, DEX save vs DC 10 + spell level",
+      "level_req": 17,
+      "profession_req": [3],
+      "subclass_req": "arcane_trickster",
+      "stat_req": {"dex": 17, "int": 15},
+      "dp_cost": 15,
+      "success_dc": 16,
+      "type": "reaction",
+      "category": "subclass_feature",
+      "intent_type": "magic",
+      "uses_per": "long_rest",
+      "uses_max": 1,
+      "effect": {
+        "absorb_spell": true,
+        "max_spell_level": 4,
+        "cast_next_turn": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,200 @@
+{
+  "perks": [
+    {
+      "id": 1000,
+      "name": "Improved Critical",
+      "description": "Weapon attacks score a critical hit on a roll of 19 or 20",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "champion",
+      "stat_req": {"str": 14},
+      "dp_cost": 10,
+      "success_dc": 12,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "crit_range": "19-20"
+      }
+    },
+    {
+      "id": 1001,
+      "name": "Remarkable Athlete",
+      "description": "Add half proficiency bonus to STR, DEX, and CON checks; standing uses only 5 feet of movement; running long jump increases by STR modifier",
+      "level_req": 7,
+      "profession_req": [1],
+      "subclass_req": "champion",
+      "stat_req": {"str": 14, "con": 12},
+      "dp_cost": 10,
+      "success_dc": 14,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "half_proficiency_checks": ["str", "dex", "con"],
+        "standing_movement_cost": 5,
+        "jump_bonus": "str_mod"
+      }
+    },
+    {
+      "id": 1002,
+      "name": "Additional Fighting Style",
+      "description": "Choose a second Fighting Style option from the list",
+      "level_req": 10,
+      "profession_req": [1],
+      "subclass_req": "champion",
+      "stat_req": {"str": 15},
+      "dp_cost": 12,
+      "success_dc": 15,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "extra_fighting_style": true
+      }
+    },
+    {
+      "id": 1003,
+      "name": "Superior Critical",
+      "description": "Weapon attacks score a critical hit on a roll of 18-20",
+      "level_req": 15,
+      "profession_req": [1],
+      "subclass_req": "champion",
+      "stat_req": {"str": 16},
+      "dp_cost": 15,
+      "success_dc": 16,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "crit_range": "18-20"
+      }
+    },
+    {
+      "id": 1004,
+      "name": "Survivor",
+      "description": "Regain 5 + CON modifier hit points at the start of each turn when below half hit points",
+      "level_req": 18,
+      "profession_req": [1],
+      "subclass_req": "champion",
+      "stat_req": {"con": 16},
+      "dp_cost": 18,
+      "success_dc": 18,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "regeneration": "5 + con_mod",
+        "condition": "below_half_hp",
+        "trigger": "start_of_turn"
+      }
+    },
+    {
+      "id": 1005,
+      "name": "Combat Superiority",
+      "description": "Gain superiority dice and learn 3 maneuvers (required for maneuvers)",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 15,
+      "success_dc": 14,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "resource": "superiority_dice",
+        "dice_count": 4,
+        "dice_sides": 8,
+        "maneuvers_known": 3
+      }
+    },
+    {
+      "id": 1006,
+      "name": "Student of War",
+      "description": "Gain proficiency with one type of artisan's tools",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"int": 10},
+      "dp_cost": 3,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "artisan_tools_proficiency": 1
+      }
+    },
+    {
+      "id": 1007,
+      "name": "Improved Combat Superiority",
+      "description": "Superiority Dice become d10s",
+      "level_req": 10,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 15},
+      "dp_cost": 10,
+      "success_dc": 14,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "superiority_dice_upgrade": 10
+      }
+    },
+    {
+      "id": 1008,
+      "name": "Superior Combat Superiority",
+      "description": "Superiority Dice become d12s",
+      "level_req": 18,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 17},
+      "dp_cost": 15,
+      "success_dc": 17,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "superiority_dice_upgrade": 12
+      }
+    },
+    {
+      "id": 1009,
+      "name": "Extra Attack (2 attacks)",
+      "description": "Attack twice when taking the Attack action",
+      "level_req": 5,
+      "profession_req": [1],
+      "stat_req": {"str": 13},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "attacks_per_action": 2
+      }
+    },
+    {
+      "id": 1010,
+      "name": "Extra Attack (3 attacks)",
+      "description": "Attack three times when taking the Attack action",
+      "level_req": 11,
+      "profession_req": [1],
+      "stat_req": {"str": 15},
+      "dp_cost": 12,
+      "success_dc": 15,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "attacks_per_action": 3
+      }
+    },
+    {
+      "id": 1011,
+      "name": "Extra Attack (4 attacks)",
+      "description": "Attack four times when taking the Attack action",
+      "level_req": 20,
+      "profession_req": [1],
+      "stat_req": {"str": 18},
+      "dp_cost": 20,
+      "success_dc": 18,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "attacks_per_action": 4
+      }
+    }
+  ]
+}

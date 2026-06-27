@@ -1,0 +1,33 @@
+model properties:
+metadata_props:
+
+
+graph main_graph (
+  %features[INT8, 1x8], exponents: [-7]
+) initializers (
+  %fc.bias[INT32, 1]
+  %fc.weight[INT8, 1x1x8x1]
+) {
+  %value = Gemm[activation = 'Linear', alpha = 1, beta = 1, quant_type = 'S8', transA = 0, transB = 0](%features, %fc.weight, %fc.bias)
+  return %value
+}
+
+
+initializers value:
+%fc.bias, shape: [1], exponents: [-15], docString: b'layout ==> UNK', 
+value: array([7, 0, 0, 0], dtype=int32)
+%fc.weight, shape: [1, 1, 8, 1], exponents: [-8], docString: b'layout ==> (N/16)HWC16_UNALIGNED', 
+value: array([-60,  91, -52, -17,   8,  99, -29, -24,   0,   0,   0,   0,   0,
+         0,   0,   0], dtype=int8)
+
+
+values info:
+%features[INT8, 1x8], exponents: [-7]
+%value[INT8, 1x1], exponents: [-9]
+
+
+test inputs value:
+
+
+
+test outputs value:

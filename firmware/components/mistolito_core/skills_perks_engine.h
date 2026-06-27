@@ -14,6 +14,7 @@ typedef enum {
 typedef struct {
     learn_type_e type;
     uint8_t id;
+    uint8_t intent_type;
     uint8_t dp_cost;
     uint8_t success_dc;
 } learn_candidate_t;

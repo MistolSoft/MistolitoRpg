@@ -11,6 +11,8 @@ void combat_engine_roll_initiative(pet_t *pet, enemy_t *enemy, combat_state_t *c
 bool combat_engine_saving_throw(pet_t *pet, uint8_t save_type, uint8_t dc);
 bool combat_engine_enemy_saving_throw(enemy_t *enemy, uint8_t save_type, uint8_t dc);
 void combat_engine_player_attack(pet_t *pet, enemy_t *target, combat_state_t *combat);
+void combat_engine_player_attack_defend(pet_t *pet, enemy_t *target, combat_state_t *combat);
+bool combat_engine_try_flee(pet_t *pet, encounter_t *encounter, combat_state_t *combat);
 void combat_engine_enemy_attack(enemy_t *enemy, pet_t *pet, combat_state_t *combat);
 void combat_engine_log_round(pet_t *pet, enemy_t *enemy, combat_state_t *combat);
 bool combat_engine_all_enemies_dead(encounter_t *encounter);

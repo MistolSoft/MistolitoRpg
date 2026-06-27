@@ -203,6 +203,35 @@ void combat_engine_player_attack(pet_t *pet, enemy_t *target, combat_state_t *co
 int8_t dex_mod = rules_get_modifier(pet->dex);
 int16_t attack_roll = (int16_t)rules_roll_d20() + dex_mod;
 
+int16_t roll_needed = target->ac - dex_mod;
+if (roll_needed < 2) roll_needed = 2;
+if (roll_needed > 20) roll_needed = 20;
+combat->last_p_success = (21.0f - (float)roll_needed) / 20.0f;
+
+int8_t str_mod = rules_get_modifier(pet->str);
+int16_t str_plus_min = str_mod + pet->bonuses.min_damage;
+uint8_t dice_count = 3 + pet->bonuses.extra_dice;
+
+switch (pet->profession) {
+case PROF_WARRIOR:
+    combat->last_dmg_min = (float)(dice_count * 1 + str_plus_min);
+    combat->last_dmg_max = (float)(dice_count * 6 + str_plus_min);
+    break;
+case PROF_MAGE:
+    combat->last_dmg_min = (float)((1 + pet->bonuses.extra_dice) * 1 + str_plus_min);
+    combat->last_dmg_max = (float)((1 + pet->bonuses.extra_dice) * 20 + str_plus_min);
+    break;
+case PROF_ROGUE:
+    combat->last_dmg_min = (float)(dice_count * 1 + str_plus_min);
+    combat->last_dmg_max = (float)(dice_count * 4 * 2 + str_plus_min);
+    break;
+default:
+    combat->last_dmg_min = (float)(pet->combat.dice_count * 1 + pet->combat.damage_bonus + str_plus_min);
+    combat->last_dmg_max = (float)(pet->combat.dice_count * pet->combat.damage_dice + pet->combat.damage_bonus + str_plus_min);
+    break;
+}
+if (combat->last_dmg_min < 1.0f) combat->last_dmg_min = 1.0f;
+
 if (attack_roll >= target->ac) {
 int16_t base_damage = 0;
 uint8_t dice_count = 3 + pet->bonuses.extra_dice;
@@ -261,7 +290,7 @@ try_second_wind(pet);
 void combat_engine_enemy_attack(enemy_t *enemy, pet_t *pet, combat_state_t *combat)
 {
     int8_t enemy_mod = enemy->attack_bonus;
-    int8_t pet_ac = pet->combat.base_ac + rules_get_modifier(pet->dex);
+    int8_t pet_ac = pet->combat.base_ac + rules_get_modifier(pet->dex) + combat->defend_bonus_ac;
     int16_t attack_roll = (int16_t)rules_roll_d20() + enemy_mod;
 
     if (attack_roll >= pet_ac) {
@@ -279,6 +308,123 @@ void combat_engine_enemy_attack(enemy_t *enemy, pet_t *pet, combat_state_t *comb
         combat->last_enemy_damage = 0;
         combat->enemy_hit = false;
     }
+}
+
+void combat_engine_player_attack_defend(pet_t *pet, enemy_t *target, combat_state_t *combat)
+{
+    int8_t dex_mod = rules_get_modifier(pet->dex);
+    int16_t attack_roll = (int16_t)rules_roll_d20() + dex_mod - 4;
+
+    combat->defend_bonus_ac = 4;
+
+    int16_t roll_needed = target->ac - dex_mod + 4;
+    if (roll_needed < 2) roll_needed = 2;
+    if (roll_needed > 20) roll_needed = 20;
+    combat->last_p_success = (21.0f - (float)roll_needed) / 20.0f;
+
+    int8_t str_mod = rules_get_modifier(pet->str);
+    int16_t str_plus_min = str_mod + pet->bonuses.min_damage;
+    uint8_t dice_count = 3 + pet->bonuses.extra_dice;
+
+    switch (pet->profession) {
+    case PROF_WARRIOR:
+        combat->last_dmg_min = (float)(dice_count * 1 + str_plus_min);
+        combat->last_dmg_max = (float)(dice_count * 6 + str_plus_min);
+        break;
+    case PROF_MAGE:
+        combat->last_dmg_min = (float)((1 + pet->bonuses.extra_dice) * 1 + str_plus_min);
+        combat->last_dmg_max = (float)((1 + pet->bonuses.extra_dice) * 20 + str_plus_min);
+        break;
+    case PROF_ROGUE:
+        combat->last_dmg_min = (float)(dice_count * 1 + str_plus_min);
+        combat->last_dmg_max = (float)(dice_count * 4 * 2 + str_plus_min);
+        break;
+    default:
+        combat->last_dmg_min = (float)(pet->combat.dice_count * 1 + pet->combat.damage_bonus + str_plus_min);
+        combat->last_dmg_max = (float)(pet->combat.dice_count * pet->combat.damage_dice + pet->combat.damage_bonus + str_plus_min);
+        break;
+    }
+    if (combat->last_dmg_min < 1.0f) combat->last_dmg_min = 1.0f;
+
+    if (attack_roll >= target->ac) {
+        int16_t base_damage = 0;
+        uint8_t dice_count = 3 + pet->bonuses.extra_dice;
+
+        switch (pet->profession) {
+        case PROF_WARRIOR:
+            base_damage = rules_roll_multiple(dice_count, 6);
+            try_use_superiority_die(pet, &base_damage);
+            break;
+        case PROF_MAGE:
+            base_damage = rules_roll_multiple(1 + pet->bonuses.extra_dice, 20);
+            break;
+        case PROF_ROGUE: {
+            uint8_t crit_bonus = pet->bonuses.crit;
+            for (uint8_t i = 0; i < dice_count; i++) {
+                uint8_t d = rules_roll_dice(4);
+                if (rules_random_chance(15 + crit_bonus)) {
+                    d *= 2;
+                }
+                base_damage += d;
+            }
+            int16_t sneak_damage = calculate_sneak_attack_damage(pet);
+            if (sneak_damage > 0) {
+                base_damage += sneak_damage;
+                ESP_LOGI(TAG, "Sneak Attack: +%d damage", sneak_damage);
+            }
+            break;
+        }
+        default:
+            base_damage = rules_roll_multiple(pet->combat.dice_count, pet->combat.damage_dice) + pet->combat.damage_bonus;
+            break;
+        }
+
+        int8_t str_mod = rules_get_modifier(pet->str);
+        int16_t damage = base_damage + str_mod + pet->bonuses.min_damage;
+        if (damage < 1) damage = 1;
+
+        target->hp -= damage;
+        if (target->hp < 0) target->hp = 0;
+
+        combat->last_player_damage = damage;
+        combat->player_hit = true;
+        combat->turn_count++;
+
+        if (target->hp <= 0) {
+            target->alive = false;
+        }
+    } else {
+        combat->last_player_damage = 0;
+        combat->player_hit = false;
+    }
+
+    try_second_wind(pet);
+}
+
+bool combat_engine_try_flee(pet_t *pet, encounter_t *encounter, combat_state_t *combat)
+{
+    uint8_t enemies_alive = 0;
+    for (uint8_t i = 0; i < encounter->count; i++) {
+        if (encounter->enemies[i].alive) {
+            enemies_alive++;
+        }
+    }
+
+    int8_t dex_mod = rules_get_modifier(pet->dex);
+    uint8_t dc = 10 + enemies_alive * 3;
+    uint8_t roll = roll_d20();
+    int16_t total = (int16_t)roll + dex_mod;
+    bool success = (total >= (int16_t)dc);
+
+    if (success) {
+        combat->fled = true;
+        ESP_LOGD(TAG, "Flee successful! d20(%d) + %d = %d vs DC %d", roll, dex_mod, total, dc);
+    } else {
+        combat->fled = false;
+        ESP_LOGD(TAG, "Flee failed! d20(%d) + %d = %d vs DC %d", roll, dex_mod, total, dc);
+    }
+
+    return success;
 }
 
 void combat_engine_log_round(pet_t *pet, enemy_t *enemy, combat_state_t *combat)

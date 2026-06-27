@@ -1,6 +1,7 @@
 #include "screens.h"
 #include "sprites.h"
 #include "mistolito.h"
+#include "storage_task.h"
 #include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
@@ -408,9 +409,11 @@ void screens_update(game_snapshot_t *snap)
         case GS_RESTING:
             screens_load(SCREEN_REST);
             break;
+        case GS_TRAINING:
+            screens_load(SCREEN_GAME);
+            break;
         case GS_COMBAT:
         case GS_VICTORY:
-        case GS_LEVELUP:
             if (current_screen != SCREEN_GAME) {
                 screens_load(SCREEN_GAME);
             }
@@ -506,9 +509,12 @@ void screens_update(game_snapshot_t *snap)
         ui_dirty_flags |= UI_DIRTY_DP;
     }
 
-    if (ui_cache.exp != snap->pet.exp || ui_cache.exp_next != snap->pet.exp_next) {
-        ui_cache.exp = snap->pet.exp;
-        ui_cache.exp_next = snap->pet.exp_next;
+    uint32_t total_trans = storage_replay_get_total();
+    uint32_t trans_for_next = (uint32_t)snap->pet.level * 500;
+
+    if (ui_cache.exp != total_trans || ui_cache.exp_next != trans_for_next) {
+        ui_cache.exp = total_trans;
+        ui_cache.exp_next = trans_for_next;
         ui_dirty_flags |= UI_DIRTY_EXP;
     }
 

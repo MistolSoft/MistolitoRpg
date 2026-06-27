@@ -1,0 +1,84 @@
+{
+"professions": [
+{
+"id": 0,
+"name": "Novice",
+"hp_rest_threshold": 60,
+"recovery_chance": 75,
+"base_hp": 20,
+"base_energy": 10,
+"base_ac": 12,
+"damage_dice": 8,
+"damage_bonus": 0,
+"dice_count": 1,
+"hit_dice": 8,
+"hp_per_level": 5,
+"ac_mod_stat": "dex",
+"damage_progression": {
+"5": {"dice_count": 2},
+"11": {"dice_count": 3}
+}
+},
+{
+"id": 1,
+"name": "Warrior",
+"req": {"str": 14, "con": 12},
+"dp_cost": 10,
+"hp_rest_threshold": 30,
+"recovery_chance": 50,
+"base_hp": 25,
+"base_energy": 10,
+"base_ac": 14,
+"damage_dice": 6,
+"damage_bonus": 0,
+"dice_count": 3,
+"hit_dice": 10,
+"hp_per_level": 7,
+"ac_mod_stat": "dex",
+"damage_progression": {
+"5": {"dice_count": 4},
+"11": {"dice_count": 5},
+"17": {"dice_count": 6}
+}
+},
+{
+"id": 2,
+"name": "Mage",
+"req": {"int": 14, "wis": 12},
+"dp_cost": 10,
+"hp_rest_threshold": 60,
+"recovery_chance": 55,
+"base_hp": 16,
+"base_energy": 12,
+"base_ac": 10,
+"damage_dice": 20,
+"damage_bonus": 0,
+"dice_count": 1,
+"hit_dice": 6,
+"hp_per_level": 4,
+"ac_mod_stat": "dex",
+"damage_progression": {}
+},
+{
+"id": 3,
+"name": "Rogue",
+"req": {"dex": 14, "int": 10},
+"dp_cost": 10,
+"hp_rest_threshold": 50,
+"recovery_chance": 60,
+"base_hp": 18,
+"base_energy": 10,
+"base_ac": 12,
+"damage_dice": 4,
+"damage_bonus": 0,
+"dice_count": 3,
+"hit_dice": 8,
+"hp_per_level": 5,
+"ac_mod_stat": "dex",
+"damage_progression": {
+"5": {"dice_count": 4},
+"11": {"dice_count": 5}
+}
+}
+]
+}

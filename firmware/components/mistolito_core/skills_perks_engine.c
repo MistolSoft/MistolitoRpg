@@ -191,10 +191,21 @@ void skills_perks_get_available(pet_t *pet, uint8_t profession_level, learn_cand
 
             cJSON *dp_cost = cJSON_GetObjectItem(skill, "dp_cost");
             cJSON *success_dc = cJSON_GetObjectItem(skill, "success_dc");
+            cJSON *intent_item = cJSON_GetObjectItem(skill, "intent_type");
 
             if (pet->dp >= (uint32_t)(dp_cost ? dp_cost->valueint : 5)) {
                 candidates[*count].type = LEARN_TYPE_SKILL;
                 candidates[*count].id = skill_id;
+                candidates[*count].intent_type = 0;
+                if (intent_item && cJSON_IsString(intent_item)) {
+                    const char *intent_str = intent_item->valuestring;
+                    if (strcmp(intent_str, "attack") == 0) candidates[*count].intent_type = 0;
+                    else if (strcmp(intent_str, "defend") == 0) candidates[*count].intent_type = 1;
+                    else if (strcmp(intent_str, "heal") == 0) candidates[*count].intent_type = 2;
+                    else if (strcmp(intent_str, "magic") == 0) candidates[*count].intent_type = 3;
+                    else if (strcmp(intent_str, "support") == 0) candidates[*count].intent_type = 4;
+                    else if (strcmp(intent_str, "flee") == 0) candidates[*count].intent_type = 5;
+                }
                 candidates[*count].dp_cost = dp_cost ? (uint8_t)dp_cost->valueint : 5;
                 candidates[*count].success_dc = success_dc ? (uint8_t)success_dc->valueint : 10;
                 (*count)++;
@@ -261,10 +272,11 @@ bool skills_perks_try_learn(pet_t *pet, learn_candidate_t *candidate)
         if (candidate->type == LEARN_TYPE_SKILL) {
             if (pet->skill_count < MAX_SKILLS) {
                 pet->skills[pet->skill_count].skill_id = candidate->id;
+                pet->skills[pet->skill_count].intent_type = candidate->intent_type;
                 pet->skills[pet->skill_count].uses_remaining = 3;
                 pet->skills[pet->skill_count].uses_max = 3;
                 pet->skill_count++;
-                ESP_LOGI(TAG, "Skill %d learned! (roll=%d, DC=%d)", candidate->id, roll, candidate->success_dc);
+                ESP_LOGI(TAG, "Skill %d learned! (intent=%d, roll=%d, DC=%d)", candidate->id, candidate->intent_type, roll, candidate->success_dc);
             }
         } else {
             if (pet->perk_count < MAX_PERKS) {

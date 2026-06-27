@@ -1,0 +1,16 @@
+{
+    "config": {
+        "exp_base": 50,
+        "exp_linear": 50,
+        "exp_multiplier": 1.15,
+        "hp_bonus_base": 5,
+        "hp_bonus_step": 5,
+        "cycle_length": 20,
+        "cycle_multiplier": 0.5,
+        "dp_gain_chance": 30,
+        "profession_unlock_dp": 10,
+        "rest_base_ticks": 5,
+        "rest_dice_sides": 5,
+        "rest_recovery_percent": 10
+    }
+}

@@ -6,6 +6,7 @@
 #include "esp_err.h"
 
 #define USB_FILE_BUFFER_SIZE 8192
+#define USB_DECODE_CHUNK_SIZE 128
 
 typedef enum {
     USB_STATE_IDLE,

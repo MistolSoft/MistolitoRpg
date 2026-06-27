@@ -275,7 +275,6 @@ cJSON *id_item = cJSON_GetObjectItem(prof, "id");
 if (id_item && id_item->valueint == pet->profession) {
 cJSON *hit_dice = cJSON_GetObjectItem(prof, "hit_dice");
 cJSON *hp_per_level = cJSON_GetObjectItem(prof, "hp_per_level");
-cJSON *ac_mod_stat = cJSON_GetObjectItem(prof, "ac_mod_stat");
 cJSON *damage_prog = cJSON_GetObjectItem(prof, "damage_progression");
 
 if (hit_dice && hp_per_level) {

@@ -36,6 +36,7 @@ SRCS
 "storage_task.c"
 "display_task.c"
 "screens.c"
+"training_mode.c"
 "usb_init.c"
 "lcd_init.c"
 "rules.c"
@@ -51,11 +52,19 @@ SRCS
 "resources_engine.c"
 "features_engine.c"
 "spell_engine.c"
+"reward_calculator.c"
+"experience_logger.c"
+"ppo_trainer.c"
+"exploration_manager.c"
+"skill_resolver.c"
+"critic_features.c"
+"critic_model.c"
+"policy_head.c"
 ${SPRITE_PLAYER_SRCS}
 ${SPRITE_ENEMY_SRCS}
 INCLUDE_DIRS "."
 REQUIRES mbedtls
-PRIV_REQUIRES esp_lcd spi_flash sdmmc fatfs freertos driver esp_timer cjson lvgl esp_driver_usb_serial_jtag
+PRIV_REQUIRES esp_lcd spi_flash sdmmc fatfs freertos driver esp_timer cjson lvgl esp_driver_usb_serial_jtag inference_engine
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE LV_LVGL_H_INCLUDE_SIMPLE=1)

@@ -1,0 +1,124 @@
+{
+  "perks": [
+    {
+      "id": 2000,
+      "name": "Evocation Savant",
+      "description": "Copy time and gold cost for Evocation spells is halved",
+      "level_req": 2,
+      "profession_req": [2],
+      "subclass_req": "evocation",
+      "stat_req": {"int": 14},
+      "dp_cost": 6,
+      "success_dc": 10,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "copy_time_reduction": "half",
+        "gold_cost_reduction": "half",
+        "school": "evocation"
+      }
+    },
+    {
+      "id": 2001,
+      "name": "Sculpt Spells",
+      "description": "Allies in spell area have advantage on saves and take zero damage on success",
+      "level_req": 2,
+      "profession_req": [2],
+      "subclass_req": "evocation",
+      "stat_req": {"int": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "allies_advantage_save": true,
+        "allies_zero_damage_on_success": true
+      }
+    },
+    {
+      "id": 2002,
+      "name": "Potent Cantrip",
+      "description": "Cantrips deal half damage on successful save",
+      "level_req": 6,
+      "profession_req": [2],
+      "subclass_req": "evocation",
+      "stat_req": {"int": 15},
+      "dp_cost": 10,
+      "success_dc": 14,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "cantrip_half_damage_on_save": true
+      }
+    },
+    {
+      "id": 2003,
+      "name": "Empowered Evocation",
+      "description": "Add INT modifier to damage of evocation spells",
+      "level_req": 10,
+      "profession_req": [2],
+      "subclass_req": "evocation",
+      "stat_req": {"int": 16},
+      "dp_cost": 12,
+      "success_dc": 15,
+      "type": "passive",
+      "category": "subclass_feature",
+      "effect": {
+        "add_int_mod_to_damage": true,
+        "school": "evocation"
+      }
+    },
+    {
+      "id": 2004,
+      "name": "Overchannel",
+      "description": "Deal maximum damage on a spell of level 1-5 once per day",
+      "level_req": 14,
+      "profession_req": [2],
+      "subclass_req": "evocation",
+      "stat_req": {"int": 17},
+      "dp_cost": 15,
+      "success_dc": 16,
+      "type": "active",
+      "category": "subclass_feature",
+      "uses_per": "long_rest",
+      "uses_max": 1,
+      "effect": {
+        "max_damage": true,
+        "spell_levels": [1, 2, 3, 4, 5]
+      }
+    },
+    {
+      "id": 2005,
+      "name": "Spellcasting",
+      "description": "Cast wizard spells using Intelligence as spellcasting ability",
+      "level_req": 1,
+      "profession_req": [2],
+      "stat_req": {"int": 12},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "cast_spells": true,
+        "spellcasting_ability": "int"
+      }
+    },
+    {
+      "id": 2006,
+      "name": "Arcane Recovery",
+      "description": "Recover spell slots during a short rest once per day",
+      "level_req": 1,
+      "profession_req": [2],
+      "stat_req": {"int": 12},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "active",
+      "category": "class_feature",
+      "uses_per": "long_rest",
+      "uses_max": 1,
+      "effect": {
+        "recover_spell_slots": true
+      }
+    }
+  ]
+}

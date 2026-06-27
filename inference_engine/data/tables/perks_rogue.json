@@ -1,0 +1,127 @@
+{
+  "perks": [
+    {
+      "id": 3000,
+      "name": "Expertise",
+      "description": "Double proficiency bonus for two skills",
+      "level_req": 1,
+      "profession_req": [3],
+      "stat_req": {"dex": 12},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "double_proficiency_skills": 2
+      }
+    },
+    {
+      "id": 3001,
+      "name": "Sneak Attack",
+      "description": "Deal extra damage when having advantage or ally within 5 feet",
+      "level_req": 1,
+      "profession_req": [3],
+      "stat_req": {"dex": 12},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "sneak_attack_dice": 1,
+        "dice_sides": 6,
+        "conditions": ["advantage_on_attack", "ally_within_5ft", "finesse_or_ranged_weapon"]
+      }
+    },
+    {
+      "id": 3002,
+      "name": "Thieves' Cant",
+      "description": "Secret mix of dialect, jargon, and code for hidden messages",
+      "level_req": 1,
+      "profession_req": [3],
+      "stat_req": {"dex": 10},
+      "dp_cost": 2,
+      "success_dc": 5,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "secret_language": true
+      }
+    },
+    {
+      "id": 3003,
+      "name": "Evasion",
+      "description": "On DEX save for half damage: success = no damage, fail = half damage",
+      "level_req": 7,
+      "profession_req": [3],
+      "stat_req": {"dex": 15},
+      "dp_cost": 10,
+      "success_dc": 14,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "dex_save_no_damage": true,
+        "dex_save_half_on_fail": true
+      }
+    },
+    {
+      "id": 3004,
+      "name": "Reliable Talent",
+      "description": "Treat all d20 rolls of 9 or lower as 10 for proficient skills",
+      "level_req": 11,
+      "profession_req": [3],
+      "stat_req": {"dex": 16},
+      "dp_cost": 12,
+      "success_dc": 15,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "min_roll_proficient": 10
+      }
+    },
+    {
+      "id": 3005,
+      "name": "Blindsense",
+      "description": "Aware of hidden creatures within 10 feet",
+      "level_req": 14,
+      "profession_req": [3],
+      "stat_req": {"dex": 16},
+      "dp_cost": 12,
+      "success_dc": 15,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "detect_invisible_range": 10
+      }
+    },
+    {
+      "id": 3006,
+      "name": "Slippery Mind",
+      "description": "Proficiency in Wisdom saving throws",
+      "level_req": 15,
+      "profession_req": [3],
+      "stat_req": {"dex": 17, "wis": 12},
+      "dp_cost": 12,
+      "success_dc": 15,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "wis_save_proficiency": true
+      }
+    },
+    {
+      "id": 3007,
+      "name": "Elusive",
+      "description": "No attack rolls have advantage against you while not incapacitated",
+      "level_req": 18,
+      "profession_req": [3],
+      "stat_req": {"dex": 17},
+      "dp_cost": 15,
+      "success_dc": 16,
+      "type": "passive",
+      "category": "class_feature",
+      "effect": {
+        "no_advantage_against": true
+      }
+    }
+  ]
+}

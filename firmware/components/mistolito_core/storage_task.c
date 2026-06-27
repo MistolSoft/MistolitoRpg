@@ -14,6 +14,8 @@
 #include <string.h>
 #include <math.h>
 #include <sys/stat.h>
+#include <errno.h>
+#include <dirent.h>
 
 static const char *TAG = "STORAGE";
 
@@ -25,6 +27,15 @@ static const char *TAG = "STORAGE";
 
 QueueHandle_t g_storage_queue = NULL;
 static bool g_mounted = false;
+
+static void replay_build_paths(void);
+
+static replay_header_t g_replay_header;
+static bool g_replay_initialized = false;
+static uint8_t g_replay_num_actions = 0;
+static char g_replay_dir[64];
+static char g_replay_header_path[80];
+static char g_replay_data_dir[64];
 
 void storage_task_start(void)
 {
@@ -77,73 +88,73 @@ case STORAGE_OP_SAVE_PET_DELTA:
         FILE *f = fopen(MOUNT_POINT "/BRAIN/PET/pet_data.json", "w");
         if (f) {
             fprintf(f, "{\"name\":\"%s\",\"level\":%d,\"profession_level\":%d,\"exp\":%lu,\"hp\":%d,\"hp_max\":%d,\"energy\":%d,\"profession\":%d,\"str\":%d,\"dex\":%d,\"con\":%d,\"int\":%d,\"wis\":%d,\"cha\":%d,\"dp\":%lu,\"enemies_killed\":%lu,\"lives\":%d,\"hp_rest_threshold\":%d,\"recovery_chance\":%d,\"base_ac\":%d,\"damage_dice\":%d,\"damage_bonus\":%d,\"dice_count\":%d,\"dna_salt\":%lu,\"skill_count\":%d,\"perk_count\":%d",
-            req.pet->name, req.pet->level, req.pet->profession_level, (unsigned long)req.pet->exp,
-            req.pet->hp, req.pet->hp_max, req.pet->energy, req.pet->profession,
-            req.pet->str, req.pet->dex, req.pet->con,
-            req.pet->intel, req.pet->wis, req.pet->cha,
-            (unsigned long)req.pet->dp, (unsigned long)req.pet->enemies_killed, req.pet->lives,
-            req.pet->rest.hp_rest_threshold, req.pet->rest.recovery_chance,
-            req.pet->combat.base_ac, req.pet->combat.damage_dice, req.pet->combat.damage_bonus, req.pet->combat.dice_count,
-            (unsigned long)req.pet->dna.salt, req.pet->skill_count, req.pet->perk_count);
+            req.pet.pet->name, req.pet.pet->level, req.pet.pet->profession_level, (unsigned long)req.pet.pet->exp,
+            req.pet.pet->hp, req.pet.pet->hp_max, req.pet.pet->energy, req.pet.pet->profession,
+            req.pet.pet->str, req.pet.pet->dex, req.pet.pet->con,
+            req.pet.pet->intel, req.pet.pet->wis, req.pet.pet->cha,
+            (unsigned long)req.pet.pet->dp, (unsigned long)req.pet.pet->enemies_killed, req.pet.pet->lives,
+            req.pet.pet->rest.hp_rest_threshold, req.pet.pet->rest.recovery_chance,
+            req.pet.pet->combat.base_ac, req.pet.pet->combat.damage_dice, req.pet.pet->combat.damage_bonus, req.pet.pet->combat.dice_count,
+            (unsigned long)req.pet.pet->dna.salt, req.pet.pet->skill_count, req.pet.pet->perk_count);
 
             fprintf(f, ",\"skills\":[");
-            for (uint8_t i = 0; i < req.pet->skill_count; i++) {
+            for (uint8_t i = 0; i < req.pet.pet->skill_count; i++) {
                 if (i > 0) fprintf(f, ",");
-                fprintf(f, "{\"id\":%d,\"uses\":%d}", req.pet->skills[i].skill_id, req.pet->skills[i].uses_remaining);
+                fprintf(f, "{\"id\":%d,\"intent\":%d,\"uses\":%d}", req.pet.pet->skills[i].skill_id, req.pet.pet->skills[i].intent_type, req.pet.pet->skills[i].uses_remaining);
             }
             fprintf(f, "]");
 
             fprintf(f, ",\"perks\":[");
-            for (uint8_t i = 0; i < req.pet->perk_count; i++) {
+            for (uint8_t i = 0; i < req.pet.pet->perk_count; i++) {
                 if (i > 0) fprintf(f, ",");
-                fprintf(f, "{\"id\":%d}", req.pet->perks[i].id);
+                fprintf(f, "{\"id\":%d}", req.pet.pet->perks[i].id);
 }
 fprintf(f, "]");
 
 fprintf(f, ",\"spell_slots\":[");
 for (uint8_t i = 0; i < 9; i++) {
 if (i > 0) fprintf(f, ",");
-fprintf(f, "%d", req.pet->spell_slots.slots[i]);
+fprintf(f, "%d", req.pet.pet->spell_slots.slots[i]);
 }
 fprintf(f, "]");
 
 fprintf(f, ",\"spell_slots_max\":[");
 for (uint8_t i = 0; i < 9; i++) {
 if (i > 0) fprintf(f, ",");
-fprintf(f, "%d", req.pet->spell_slots_max[i]);
+fprintf(f, "%d", req.pet.pet->spell_slots_max[i]);
 }
 fprintf(f, "]");
 
 fprintf(f, ",\"spells_known\":[");
-for (uint8_t i = 0; i < req.pet->spells_known_count; i++) {
+for (uint8_t i = 0; i < req.pet.pet->spells_known_count; i++) {
 if (i > 0) fprintf(f, ",");
-fprintf(f, "{\"id\":\"%s\",\"level\":%d}", req.pet->spells_known[i].id, req.pet->spells_known[i].level);
+fprintf(f, "{\"id\":\"%s\",\"level\":%d}", req.pet.pet->spells_known[i].id, req.pet.pet->spells_known[i].level);
 }
 fprintf(f, "]");
 
-fprintf(f, ",\"cantrips_known\":%d,\"cantrips_max\":%d", req.pet->cantrips_known, req.pet->cantrips_max);
+fprintf(f, ",\"cantrips_known\":%d,\"cantrips_max\":%d", req.pet.pet->cantrips_known, req.pet.pet->cantrips_max);
 
-fprintf(f, ",\"action_surge_uses\":%d,\"action_surge_max\":%d", req.pet->action_surge_uses, req.pet->action_surge_max);
-fprintf(f, ",\"indomitable_uses\":%d,\"indomitable_max\":%d", req.pet->indomitable_uses, req.pet->indomitable_max);
-fprintf(f, ",\"second_wind_uses\":%d", req.pet->second_wind_uses);
+fprintf(f, ",\"action_surge_uses\":%d,\"action_surge_max\":%d", req.pet.pet->action_surge_uses, req.pet.pet->action_surge_max);
+fprintf(f, ",\"indomitable_uses\":%d,\"indomitable_max\":%d", req.pet.pet->indomitable_uses, req.pet.pet->indomitable_max);
+fprintf(f, ",\"second_wind_uses\":%d", req.pet.pet->second_wind_uses);
 fprintf(f, ",\"superiority_dice\":%d,\"superiority_dice_max\":%d,\"superiority_dice_size\":%d",
-req.pet->superiority_dice, req.pet->superiority_dice_max, req.pet->superiority_dice_size);
-fprintf(f, ",\"sneak_attack_dice\":%d", req.pet->sneak_attack_dice);
-fprintf(f, ",\"arcane_recovery_used\":%d", req.pet->arcane_recovery_used);
+req.pet.pet->superiority_dice, req.pet.pet->superiority_dice_max, req.pet.pet->superiority_dice_size);
+fprintf(f, ",\"sneak_attack_dice\":%d", req.pet.pet->sneak_attack_dice);
+fprintf(f, ",\"arcane_recovery_used\":%d", req.pet.pet->arcane_recovery_used);
 
 fprintf(f, ",\"maneuvers\":[");
-        for (uint8_t i = 0; i < req.pet->maneuver_count; i++) {
+        for (uint8_t i = 0; i < req.pet.pet->maneuver_count; i++) {
             if (i > 0) fprintf(f, ",");
-            fprintf(f, "{\"id\":%d}", req.pet->maneuvers[i].maneuver_id);
+            fprintf(f, "{\"id\":%d}", req.pet.pet->maneuvers[i].maneuver_id);
         }
         fprintf(f, "]");
 
-fprintf(f, ",\"ability_points\":%d,\"ability_points_max\":%d", req.pet->ability_points, req.pet->ability_points_max);
+fprintf(f, ",\"ability_points\":%d,\"ability_points_max\":%d", req.pet.pet->ability_points, req.pet.pet->ability_points_max);
 
 fprintf(f, "}");
 
 fclose(f);
-ESP_LOGI(TAG, "Pet saved (dirty=0x%04X)", req.dirty_flags);
+ESP_LOGI(TAG, "Pet saved (dirty=0x%04X)", req.pet.dirty_flags);
         }
     }
     break;
@@ -161,42 +172,44 @@ ESP_LOGI(TAG, "Pet saved (dirty=0x%04X)", req.dirty_flags);
                     if (root) {
                         cJSON *item;
 if ((item = cJSON_GetObjectItem(root, "name"))) {
-    strncpy(req.pet->name, item->valuestring, PET_NAME_MAX_LEN - 1);
+    strncpy(req.pet.pet->name, item->valuestring, PET_NAME_MAX_LEN - 1);
 }
-if ((item = cJSON_GetObjectItem(root, "level"))) req.pet->level = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "profession_level"))) req.pet->profession_level = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "exp"))) req.pet->exp = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "hp"))) req.pet->hp = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "hp_max"))) req.pet->hp_max = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "energy"))) req.pet->energy = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "str"))) req.pet->str = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "dex"))) req.pet->dex = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "con"))) req.pet->con = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "int"))) req.pet->intel = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "wis"))) req.pet->wis = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "cha"))) req.pet->cha = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "dp"))) req.pet->dp = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "enemies_killed"))) req.pet->enemies_killed = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "lives"))) req.pet->lives = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "hp_rest_threshold"))) req.pet->rest.hp_rest_threshold = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "recovery_chance"))) req.pet->rest.recovery_chance = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "base_ac"))) req.pet->combat.base_ac = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "damage_dice"))) req.pet->combat.damage_dice = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "damage_bonus"))) req.pet->combat.damage_bonus = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "dice_count"))) req.pet->combat.dice_count = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "level"))) req.pet.pet->level = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "profession_level"))) req.pet.pet->profession_level = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "exp"))) req.pet.pet->exp = item->valueint;
+                        if ((item = cJSON_GetObjectItem(root, "hp"))) req.pet.pet->hp = item->valueint;
+                        if ((item = cJSON_GetObjectItem(root, "hp_max"))) req.pet.pet->hp_max = item->valueint;
+                        if ((item = cJSON_GetObjectItem(root, "energy"))) req.pet.pet->energy = item->valueint;
+                        if ((item = cJSON_GetObjectItem(root, "str"))) req.pet.pet->str = item->valueint;
+                        if ((item = cJSON_GetObjectItem(root, "dex"))) req.pet.pet->dex = item->valueint;
+                        if ((item = cJSON_GetObjectItem(root, "con"))) req.pet.pet->con = item->valueint;
+                        if ((item = cJSON_GetObjectItem(root, "int"))) req.pet.pet->intel = item->valueint;
+                        if ((item = cJSON_GetObjectItem(root, "wis"))) req.pet.pet->wis = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "cha"))) req.pet.pet->cha = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "dp"))) req.pet.pet->dp = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "enemies_killed"))) req.pet.pet->enemies_killed = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "lives"))) req.pet.pet->lives = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "hp_rest_threshold"))) req.pet.pet->rest.hp_rest_threshold = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "recovery_chance"))) req.pet.pet->rest.recovery_chance = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "base_ac"))) req.pet.pet->combat.base_ac = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "damage_dice"))) req.pet.pet->combat.damage_dice = item->valueint;
+            if ((item = cJSON_GetObjectItem(root, "damage_bonus"))) req.pet.pet->combat.damage_bonus = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "dice_count"))) req.pet.pet->combat.dice_count = item->valueint;
 
     cJSON *skills_arr = cJSON_GetObjectItem(root, "skills");
     if (skills_arr && cJSON_IsArray(skills_arr)) {
         cJSON *skill_item = NULL;
         cJSON_ArrayForEach(skill_item, skills_arr) {
-            if (req.pet->skill_count < MAX_SKILLS) {
+            if (req.pet.pet->skill_count < MAX_SKILLS) {
                 cJSON *id_item = cJSON_GetObjectItem(skill_item, "id");
                 cJSON *uses_item = cJSON_GetObjectItem(skill_item, "uses");
+                cJSON *intent_item = cJSON_GetObjectItem(skill_item, "intent");
                 if (id_item) {
-                    req.pet->skills[req.pet->skill_count].skill_id = (uint8_t)id_item->valueint;
-                    req.pet->skills[req.pet->skill_count].uses_remaining = uses_item ? (uint8_t)uses_item->valueint : 3;
-                    req.pet->skills[req.pet->skill_count].uses_max = 3;
-                    req.pet->skill_count++;
+                    req.pet.pet->skills[req.pet.pet->skill_count].skill_id = (uint8_t)id_item->valueint;
+                    req.pet.pet->skills[req.pet.pet->skill_count].intent_type = intent_item ? (uint8_t)intent_item->valueint : 0;
+                    req.pet.pet->skills[req.pet.pet->skill_count].uses_remaining = uses_item ? (uint8_t)uses_item->valueint : 3;
+                    req.pet.pet->skills[req.pet.pet->skill_count].uses_max = 3;
+                    req.pet.pet->skill_count++;
                 }
             }
         }
@@ -206,11 +219,11 @@ cJSON *perks_arr = cJSON_GetObjectItem(root, "perks");
 if (perks_arr && cJSON_IsArray(perks_arr)) {
 cJSON *perk_item = NULL;
 cJSON_ArrayForEach(perk_item, perks_arr) {
-if (req.pet->perk_count < MAX_PERKS) {
+if (req.pet.pet->perk_count < MAX_PERKS) {
 cJSON *id_item = cJSON_GetObjectItem(perk_item, "id");
 if (id_item) {
-req.pet->perks[req.pet->perk_count].id = (uint8_t)id_item->valueint;
-req.pet->perk_count++;
+req.pet.pet->perks[req.pet.pet->perk_count].id = (uint8_t)id_item->valueint;
+req.pet.pet->perk_count++;
 }
 }
 }
@@ -221,7 +234,7 @@ if (spell_slots_arr && cJSON_IsArray(spell_slots_arr)) {
 uint8_t idx = 0;
 cJSON *slot_item = NULL;
 cJSON_ArrayForEach(slot_item, spell_slots_arr) {
-if (idx < 9) req.pet->spell_slots.slots[idx++] = (uint8_t)slot_item->valueint;
+if (idx < 9) req.pet.pet->spell_slots.slots[idx++] = (uint8_t)slot_item->valueint;
 }
 }
 
@@ -230,7 +243,7 @@ if (spell_slots_max_arr && cJSON_IsArray(spell_slots_max_arr)) {
 uint8_t idx = 0;
 cJSON *slot_item = NULL;
 cJSON_ArrayForEach(slot_item, spell_slots_max_arr) {
-if (idx < 9) req.pet->spell_slots_max[idx++] = (uint8_t)slot_item->valueint;
+if (idx < 9) req.pet.pet->spell_slots_max[idx++] = (uint8_t)slot_item->valueint;
 }
 }
 
@@ -238,52 +251,52 @@ cJSON *spells_known_arr = cJSON_GetObjectItem(root, "spells_known");
 if (spells_known_arr && cJSON_IsArray(spells_known_arr)) {
 cJSON *spell_item = NULL;
 cJSON_ArrayForEach(spell_item, spells_known_arr) {
-if (req.pet->spells_known_count < MAX_SPELLS_KNOWN) {
+if (req.pet.pet->spells_known_count < MAX_SPELLS_KNOWN) {
 cJSON *id_item = cJSON_GetObjectItem(spell_item, "id");
 cJSON *level_item = cJSON_GetObjectItem(spell_item, "level");
 if (id_item) {
-strncpy(req.pet->spells_known[req.pet->spells_known_count].id, id_item->valuestring, sizeof(req.pet->spells_known[0].id) - 1);
-req.pet->spells_known[req.pet->spells_known_count].level = level_item ? (uint8_t)level_item->valueint : 0;
-req.pet->spells_known_count++;
+strncpy(req.pet.pet->spells_known[req.pet.pet->spells_known_count].id, id_item->valuestring, sizeof(req.pet.pet->spells_known[0].id) - 1);
+req.pet.pet->spells_known[req.pet.pet->spells_known_count].level = level_item ? (uint8_t)level_item->valueint : 0;
+req.pet.pet->spells_known_count++;
 }
 }
 }
 }
 
-if ((item = cJSON_GetObjectItem(root, "cantrips_known"))) req.pet->cantrips_known = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "cantrips_max"))) req.pet->cantrips_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "action_surge_uses"))) req.pet->action_surge_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "action_surge_max"))) req.pet->action_surge_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "indomitable_uses"))) req.pet->indomitable_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "indomitable_max"))) req.pet->indomitable_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "second_wind_uses"))) req.pet->second_wind_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice"))) req.pet->superiority_dice = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice_max"))) req.pet->superiority_dice_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice_size"))) req.pet->superiority_dice_size = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "sneak_attack_dice"))) req.pet->sneak_attack_dice = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "arcane_recovery_used"))) req.pet->arcane_recovery_used = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "cantrips_known"))) req.pet.pet->cantrips_known = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "cantrips_max"))) req.pet.pet->cantrips_max = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "action_surge_uses"))) req.pet.pet->action_surge_uses = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "action_surge_max"))) req.pet.pet->action_surge_max = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "indomitable_uses"))) req.pet.pet->indomitable_uses = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "indomitable_max"))) req.pet.pet->indomitable_max = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "second_wind_uses"))) req.pet.pet->second_wind_uses = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "superiority_dice"))) req.pet.pet->superiority_dice = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "superiority_dice_max"))) req.pet.pet->superiority_dice_max = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "superiority_dice_size"))) req.pet.pet->superiority_dice_size = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "sneak_attack_dice"))) req.pet.pet->sneak_attack_dice = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "arcane_recovery_used"))) req.pet.pet->arcane_recovery_used = item->valueint;
 
 cJSON *maneuvers_arr = cJSON_GetObjectItem(root, "maneuvers");
                 if (maneuvers_arr && cJSON_IsArray(maneuvers_arr)) {
                     cJSON *maneuver_item = NULL;
                     cJSON_ArrayForEach(maneuver_item, maneuvers_arr) {
-                        if (req.pet->maneuver_count < MAX_MANEUVERS_KNOWN) {
+                        if (req.pet.pet->maneuver_count < MAX_MANEUVERS_KNOWN) {
                             cJSON *id_item = cJSON_GetObjectItem(maneuver_item, "id");
                             if (id_item) {
-                                req.pet->maneuvers[req.pet->maneuver_count].maneuver_id = (uint8_t)id_item->valueint;
-                                req.pet->maneuver_count++;
+                                req.pet.pet->maneuvers[req.pet.pet->maneuver_count].maneuver_id = (uint8_t)id_item->valueint;
+                                req.pet.pet->maneuver_count++;
                             }
                         }
                     }
                 }
 
-if ((item = cJSON_GetObjectItem(root, "ability_points"))) req.pet->ability_points = item->valueint;
-                if ((item = cJSON_GetObjectItem(root, "ability_points_max"))) req.pet->ability_points_max = item->valueint;
+if ((item = cJSON_GetObjectItem(root, "ability_points"))) req.pet.pet->ability_points = item->valueint;
+                if ((item = cJSON_GetObjectItem(root, "ability_points_max"))) req.pet.pet->ability_points_max = item->valueint;
 
 cJSON_Delete(root);
 ESP_LOGI(TAG, "Pet loaded: %s Lv.%d (skills=%d, perks=%d, spells=%d, maneuvers=%d)", 
-req.pet->name, req.pet->level, req.pet->skill_count, req.pet->perk_count,
-req.pet->spells_known_count, req.pet->maneuver_count);
+req.pet.pet->name, req.pet.pet->level, req.pet.pet->skill_count, req.pet.pet->perk_count,
+req.pet.pet->spells_known_count, req.pet.pet->maneuver_count);
 }
 }
 }
@@ -291,6 +304,109 @@ break;
 
             case STORAGE_OP_LOAD_TABLES:
                 break;
+
+            case STORAGE_OP_REPLAY_INIT:
+            {
+                mkdir(g_replay_dir, 0755);
+                mkdir(EPISODES_DIR, 0755);
+                mkdir(CHECKPOINTS_DIR, 0755);
+                mkdir(EXPLORATION_DIR, 0755);
+
+                FILE *f = fopen(g_replay_header_path, "rb");
+                if (f) {
+                    fread(&g_replay_header, sizeof(replay_header_t), 1, f);
+                    fclose(f);
+                    if (g_replay_header.magic != REPLAY_MAGIC) {
+                        ESP_LOGW(TAG, "Replay header invalid, recreating");
+                        memset(&g_replay_header, 0, sizeof(replay_header_t));
+                    } else if (g_replay_header.num_actions != 0) {
+                        g_replay_num_actions = g_replay_header.num_actions;
+                        replay_build_paths();
+                    }
+                } else {
+                    memset(&g_replay_header, 0, sizeof(replay_header_t));
+                    g_replay_header.magic = REPLAY_MAGIC;
+                    g_replay_header.version = REPLAY_VERSION;
+                    g_replay_header.num_actions = g_replay_num_actions;
+                    ESP_LOGI(TAG, "Creating new replay header for a%u", g_replay_num_actions);
+                }
+
+                g_replay_initialized = true;
+                ESP_LOGI(TAG, "Replay task init: a%u, %lu chunks, %lu transitions",
+                         g_replay_num_actions,
+                         (unsigned long)g_replay_header.total_chunks,
+                         (unsigned long)g_replay_header.total_transitions);
+                break;
+            }
+
+            case STORAGE_OP_REPLAY_APPEND:
+            {
+                if (!g_replay_initialized) {
+                    ESP_LOGW(TAG, "Replay not initialized, skipping append");
+                    break;
+                }
+
+                replay_transition_t *tr = &req.replay.transition;
+
+                if (g_replay_header.current_chunk_transitions >= REPLAY_TRANSITIONS_PER_CHUNK) {
+                    g_replay_header.total_chunks++;
+                    g_replay_header.current_chunk_transitions = 0;
+                }
+
+                if (g_replay_header.total_chunks == 0) {
+                    g_replay_header.total_chunks = 1;
+                }
+
+                char chunk_path[128];
+                snprintf(chunk_path, sizeof(chunk_path), "%s/chunk_%04lu.bin", g_replay_dir,
+                         (unsigned long)g_replay_header.total_chunks);
+
+                FILE *f = fopen(chunk_path, "ab");
+                if (f) {
+                    fwrite(tr, sizeof(replay_transition_t), 1, f);
+                    fclose(f);
+
+                    g_replay_header.current_chunk_transitions++;
+                    g_replay_header.total_transitions++;
+
+                    FILE *hf = fopen(g_replay_header_path, "wb");
+                    if (hf) {
+                        fwrite(&g_replay_header, sizeof(replay_header_t), 1, hf);
+                        fclose(hf);
+                    }
+                } else {
+                    ESP_LOGE(TAG, "Failed to open chunk for append: %s (errno=%d)", chunk_path, errno);
+                }
+                break;
+            }
+
+            case STORAGE_OP_REPLAY_READ:
+            {
+                if (!g_replay_initialized) break;
+
+                uint32_t chunk_index = req.replay_read.chunk_index;
+                uint32_t *out_count = req.replay_read.out_count;
+
+                char chunk_path[128];
+                snprintf(chunk_path, sizeof(chunk_path), "%s/chunk_%04lu.bin", g_replay_dir,
+                         (unsigned long)chunk_index);
+
+                FILE *f = fopen(chunk_path, "rb");
+                if (f) {
+                    fseek(f, 0, SEEK_END);
+                    long size = ftell(f);
+                    fseek(f, 0, SEEK_SET);
+
+                    *out_count = size / sizeof(replay_transition_t);
+                    ESP_LOGI(TAG, "Read chunk %lu: %lu transitions (%ld bytes)",
+                             (unsigned long)chunk_index, (unsigned long)*out_count, size);
+                    fclose(f);
+                } else {
+                    *out_count = 0;
+                    ESP_LOGW(TAG, "Chunk %lu not found", (unsigned long)chunk_index);
+                }
+                break;
+            }
             }
 
             spi_bus_unlock();
@@ -303,9 +419,11 @@ void storage_save_pet_delta(uint8_t dirty_flags, pet_t *pet)
     if (g_storage_queue == NULL) return;
 
     storage_request_t req = {
-        .operation = STORAGE_OP_SAVE_PET_DELTA,
-        .dirty_flags = dirty_flags,
-        .pet = pet
+        .pet = {
+            .operation = STORAGE_OP_SAVE_PET_DELTA,
+            .dirty_flags = dirty_flags,
+            .pet = pet
+        }
     };
     xQueueSend(g_storage_queue, &req, 0);
 }
@@ -363,8 +481,10 @@ if (skills_arr && cJSON_IsArray(skills_arr)) {
         if (pet->skill_count < MAX_SKILLS) {
             cJSON *id_item = cJSON_GetObjectItem(skill_item, "id");
             cJSON *uses_item = cJSON_GetObjectItem(skill_item, "uses");
+            cJSON *intent_item = cJSON_GetObjectItem(skill_item, "intent");
             if (id_item) {
                 pet->skills[pet->skill_count].skill_id = (uint8_t)id_item->valueint;
+                pet->skills[pet->skill_count].intent_type = intent_item ? (uint8_t)intent_item->valueint : 0;
                 pet->skills[pet->skill_count].uses_remaining = uses_item ? (uint8_t)uses_item->valueint : 3;
                 pet->skills[pet->skill_count].uses_max = 3;
                 pet->skill_count++;
@@ -922,6 +1042,7 @@ void storage_derive_dna_stats(dna_t *dna)
     dna_generate_hash(dna);
 
     dna_derive_all_stats(dna, dna->base_stats);
+    dna_derive_intent_unlock(dna);
 
     for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
         dna->caps[i] = dna->base_stats[i] + DNA_CAP_OFFSET;
@@ -944,4 +1065,287 @@ const char* storage_get_game_tables_json(void)
         g_game_tables_json = load_json_file(MOUNT_POINT "/DATA/game_tables.json");
     }
     return g_game_tables_json;
+}
+
+static void replay_build_paths(void)
+{
+    snprintf(g_replay_dir, sizeof(g_replay_dir), REPLAY_BASE_DIR "_a%u", g_replay_num_actions);
+    snprintf(g_replay_header_path, sizeof(g_replay_header_path), "%s/header.bin", g_replay_dir);
+}
+
+void storage_replay_init(void)
+{
+    if (!g_mounted) {
+        ESP_LOGW(TAG, "Replay init: SD not mounted");
+        return;
+    }
+
+    if (g_replay_num_actions == 0) {
+        g_replay_num_actions = 1;
+    }
+
+    spi_bus_lock();
+
+    mkdir(MOUNT_POINT "/BRAIN", 0755);
+    mkdir(MOUNT_POINT "/BRAIN/COMBAT", 0755);
+    mkdir(REPLAY_BASE_DIR "_a1", 0755);
+    mkdir(EPISODES_DIR, 0755);
+    mkdir(CHECKPOINTS_DIR, 0755);
+    mkdir(EXPLORATION_DIR, 0755);
+
+    replay_build_paths();
+    mkdir(g_replay_dir, 0755);
+
+    strncpy(g_replay_data_dir, g_replay_dir, sizeof(g_replay_data_dir) - 1);
+    g_replay_data_dir[sizeof(g_replay_data_dir) - 1] = '\0';
+
+    FILE *f = fopen(g_replay_header_path, "rb");
+    if (f) {
+        fread(&g_replay_header, sizeof(replay_header_t), 1, f);
+        fclose(f);
+        if (g_replay_header.magic != REPLAY_MAGIC) {
+            ESP_LOGW(TAG, "Replay header invalid, recreating");
+            memset(&g_replay_header, 0, sizeof(replay_header_t));
+        } else if (g_replay_header.num_actions != 0) {
+            if (g_replay_header.num_actions != g_replay_num_actions) {
+                ESP_LOGI(TAG, "Replay header has a%u, updating from a%u",
+                         g_replay_header.num_actions, g_replay_num_actions);
+            }
+            g_replay_num_actions = g_replay_header.num_actions;
+            replay_build_paths();
+            strncpy(g_replay_data_dir, g_replay_dir, sizeof(g_replay_data_dir) - 1);
+            g_replay_data_dir[sizeof(g_replay_data_dir) - 1] = '\0';
+        }
+    } else {
+        for (uint8_t a = 1; a <= 10; a++) {
+            char test_path[80];
+            snprintf(test_path, sizeof(test_path), REPLAY_BASE_DIR "_a%u/header.bin", a);
+            FILE *tf = fopen(test_path, "rb");
+            if (tf) {
+                fread(&g_replay_header, sizeof(replay_header_t), 1, tf);
+                fclose(tf);
+                if (g_replay_header.magic == REPLAY_MAGIC && g_replay_header.num_actions != 0) {
+                    g_replay_num_actions = g_replay_header.num_actions;
+                    replay_build_paths();
+                    strncpy(g_replay_data_dir, g_replay_dir, sizeof(g_replay_data_dir) - 1);
+                    g_replay_data_dir[sizeof(g_replay_data_dir) - 1] = '\0';
+                    ESP_LOGI(TAG, "Found replay data in a%u (total=%lu)",
+                             g_replay_num_actions, (unsigned long)g_replay_header.total_transitions);
+                    break;
+                }
+                memset(&g_replay_header, 0, sizeof(replay_header_t));
+            }
+        }
+
+        if (g_replay_header.magic != REPLAY_MAGIC) {
+            memset(&g_replay_header, 0, sizeof(replay_header_t));
+            g_replay_header.magic = REPLAY_MAGIC;
+            g_replay_header.version = REPLAY_VERSION;
+            g_replay_header.num_actions = g_replay_num_actions;
+
+            FILE *hf = fopen(g_replay_header_path, "wb");
+            if (hf) {
+                fwrite(&g_replay_header, sizeof(replay_header_t), 1, hf);
+                fclose(hf);
+                ESP_LOGI(TAG, "Created replay header for a%u", g_replay_num_actions);
+            }
+        }
+    }
+
+    g_replay_initialized = true;
+
+    spi_bus_unlock();
+
+    ESP_LOGI(TAG, "Replay initialized: a%u, %lu chunks, %lu transitions",
+             g_replay_num_actions,
+             (unsigned long)g_replay_header.total_chunks,
+             (unsigned long)g_replay_header.total_transitions);
+}
+
+void storage_replay_set_action_count(uint8_t num_actions)
+{
+    if (num_actions == 0 || num_actions > 6) {
+        ESP_LOGE(TAG, "Invalid action count: %u", num_actions);
+        return;
+    }
+
+    if (num_actions == g_replay_num_actions) return;
+
+    g_replay_num_actions = num_actions;
+    replay_build_paths();
+
+    spi_bus_lock();
+    mkdir(g_replay_dir, 0755);
+
+    memset(&g_replay_header, 0, sizeof(replay_header_t));
+    g_replay_header.magic = REPLAY_MAGIC;
+    g_replay_header.version = REPLAY_VERSION;
+    g_replay_header.num_actions = num_actions;
+
+    FILE *hf = fopen(g_replay_header_path, "wb");
+    if (hf) {
+        fwrite(&g_replay_header, sizeof(replay_header_t), 1, hf);
+        fclose(hf);
+    }
+
+    g_replay_initialized = true;
+
+    spi_bus_unlock();
+
+    ESP_LOGI(TAG, "Replay switched to a%u (new dataset)", num_actions);
+}
+
+uint8_t storage_replay_get_action_count(void)
+{
+    return g_replay_num_actions;
+}
+
+void storage_replay_reset(void)
+{
+    if (!g_mounted) return;
+
+    ESP_LOGI(TAG, "Resetting replay buffer (a%u)...", g_replay_num_actions);
+
+    spi_bus_lock();
+
+    char chunk_path[128];
+    for (uint32_t i = 1; i <= g_replay_header.total_chunks; i++) {
+        snprintf(chunk_path, sizeof(chunk_path), "%s/chunk_%04lu.bin", g_replay_dir, (unsigned long)i);
+        remove(chunk_path);
+    }
+
+    remove(g_replay_header_path);
+
+    memset(&g_replay_header, 0, sizeof(replay_header_t));
+    g_replay_header.magic = REPLAY_MAGIC;
+    g_replay_header.version = REPLAY_VERSION;
+    g_replay_header.num_actions = g_replay_num_actions;
+
+    FILE *hf = fopen(g_replay_header_path, "wb");
+    if (hf) {
+        fwrite(&g_replay_header, sizeof(replay_header_t), 1, hf);
+        fclose(hf);
+    }
+
+    spi_bus_unlock();
+
+    ESP_LOGI(TAG, "Replay buffer reset complete (a%u)", g_replay_num_actions);
+}
+
+void storage_checkpoints_reset(void)
+{
+    if (!g_mounted) return;
+
+    ESP_LOGI(TAG, "Resetting checkpoints...");
+
+    spi_bus_lock();
+
+    DIR *dir = opendir(CHECKPOINTS_DIR);
+    if (dir) {
+        struct dirent *ent;
+        while ((ent = readdir(dir)) != NULL) {
+            if (ent->d_name[0] == '.') continue;
+            char filepath[300];
+            int len = snprintf(filepath, sizeof(filepath), CHECKPOINTS_DIR "/%s", ent->d_name);
+            if (len > 0 && len < (int)sizeof(filepath)) {
+                remove(filepath);
+            }
+        }
+        closedir(dir);
+    }
+
+    spi_bus_unlock();
+
+    ESP_LOGI(TAG, "Checkpoints reset complete");
+}
+
+void storage_replay_append(float *state, uint8_t action, float reward, float *next_state, uint8_t done)
+{
+    if (g_storage_queue == NULL || !g_replay_initialized) return;
+
+    storage_request_t req;
+    req.operation = STORAGE_OP_REPLAY_APPEND;
+    memcpy(req.replay.transition.state, state, sizeof(float) * 9);
+    req.replay.transition.action = action;
+    req.replay.transition.reward = reward;
+    memcpy(req.replay.transition.next_state, next_state, sizeof(float) * 9);
+    req.replay.transition.done = done;
+
+    xQueueSend(g_storage_queue, &req, 0);
+}
+
+bool storage_replay_read_chunk(uint32_t chunk_index, replay_transition_t *out, uint32_t *out_count)
+{
+    if (!g_mounted || !g_replay_initialized) return false;
+
+    spi_bus_lock();
+
+    char chunk_path[128];
+    snprintf(chunk_path, sizeof(chunk_path), "%s/chunk_%04lu.bin", g_replay_data_dir,
+             (unsigned long)chunk_index);
+
+    FILE *f = fopen(chunk_path, "rb");
+    if (!f) {
+        *out_count = 0;
+        spi_bus_unlock();
+        return false;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    uint32_t count = size / sizeof(replay_transition_t);
+    if (out != NULL && count > 0) {
+        size_t read = fread(out, sizeof(replay_transition_t), count, f);
+        *out_count = read;
+    } else {
+        *out_count = count;
+    }
+
+    fclose(f);
+    spi_bus_unlock();
+
+    ESP_LOGI(TAG, "Read chunk %lu: %lu transitions", (unsigned long)chunk_index, (unsigned long)*out_count);
+    return true;
+}
+
+bool storage_replay_get_stats(replay_stats_t *stats)
+{
+    if (!g_replay_initialized || stats == NULL) return false;
+
+    stats->total_chunks = g_replay_header.total_chunks;
+    stats->total_transitions = g_replay_header.total_transitions;
+    stats->current_chunk_transitions = g_replay_header.current_chunk_transitions;
+    stats->current_chunk_index = g_replay_header.total_chunks;
+
+    return true;
+}
+
+void storage_replay_get_header_path(char *out_path, size_t max_len)
+{
+    snprintf(out_path, max_len, "%s", g_replay_header_path);
+}
+
+void storage_replay_get_dir_path(char *out_path, size_t max_len)
+{
+    snprintf(out_path, max_len, "%s", g_replay_dir);
+}
+
+uint32_t storage_replay_get_total(void)
+{
+    if (!g_replay_initialized) return 0;
+    return g_replay_header.total_transitions;
+}
+
+uint32_t storage_replay_calc_transitions_for_level(uint8_t current_level)
+{
+    return (uint32_t)current_level * 500;
+}
+
+bool storage_replay_check_level_up(uint8_t current_level)
+{
+    uint32_t total = storage_replay_get_total();
+    uint32_t required = storage_replay_calc_transitions_for_level(current_level);
+    return (total >= required);
 }

@@ -11,6 +11,17 @@
 #include "resources_engine.h"
 #include "features_engine.h"
 #include "spell_engine.h"
+#include "inference_engine.h"
+#include "reward_calculator.h"
+#include "experience_logger.h"
+#include "exploration_manager.h"
+#include "skill_resolver.h"
+#include "ppo_trainer.h"
+#include "training_mode.h"
+#include "critic_features.h"
+#include "critic_model.h"
+#include "policy_head.h"
+#include "rules.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_random.h"
@@ -25,6 +36,7 @@ static bool g_initialized = false;
 static SemaphoreHandle_t g_snapshot_mutex = NULL;
 
 static combat_frame_result_t g_combat_result;
+static uint8_t g_resolved_skill_id = 0xFF;
 static bool g_combat_active = false;
 
 static search_frame_result_t g_search_result;
@@ -32,6 +44,26 @@ static uint32_t g_search_start_ms = 0;
 static uint32_t g_search_duration_ms = 0;
 
 static rest_frame_result_t g_rest_result;
+
+static critic_model_t g_critic_model;
+static combat_history_t g_combat_history;
+static float g_last_quality_score = 0.0f;
+static policy_head_t g_policy_head;
+
+typedef struct {
+    char enemy_name[ENEMY_NAME_MAX_LEN];
+    int16_t enemy_hp_start;
+    int16_t enemy_hp_max;
+    int16_t pet_hp_start;
+    uint16_t turn_count;
+    uint16_t attack_count;
+    uint16_t defend_count;
+    uint16_t flee_count;
+    uint16_t flee_success;
+    uint16_t total_damage_dealt;
+    uint16_t total_damage_taken;
+} combat_log_t;
+static combat_log_t g_combat_log;
 
 TaskHandle_t g_coordinator_task_handle = NULL;
 
@@ -81,6 +113,15 @@ void game_coordinator_start(void)
     if (g_snapshot_mutex == NULL) {
         g_snapshot_mutex = xSemaphoreCreateMutex();
     }
+
+    inference_engine_init();
+    exploration_manager_init();
+
+    critic_model_load(&g_critic_model);
+    critic_history_init(&g_combat_history, 1.0f, 1.0f);
+
+    policy_head_init(&g_policy_head, 6);
+    policy_head_load(&g_policy_head);
 
     memset(&g_snapshot, 0, sizeof(g_snapshot));
     memset(&g_combat_result, 0, sizeof(g_combat_result));
@@ -158,7 +199,6 @@ static void process_level_up(void)
 {
 uint8_t new_level = g_snapshot.pet.level + 1;
 g_snapshot.pet.level = new_level;
-g_snapshot.pet.exp = 0;
 g_snapshot.pet.exp_next = calc_exp_for_level(new_level);
 
 uint16_t hp_bonus = calc_hp_bonus(new_level);
@@ -248,68 +288,20 @@ case STAT_CHA: g_snapshot.pet.cha++; break;
 }
 }
 
-g_snapshot.pet.dirty_flags |= PET_DIRTY_LEVEL | PET_DIRTY_EXP | PET_DIRTY_HP | PET_DIRTY_STATS | PET_DIRTY_PROF_LEVEL | PET_DIRTY_SKILLS | PET_DIRTY_PERKS | PET_DIRTY_SPELLS | PET_DIRTY_RESOURCES | PET_DIRTY_MANEUVERS;
+for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
+    if (g_snapshot.pet.dna.intent_unlock[i] == new_level) {
+        exploration_manager_unlock(i);
+        ESP_LOGI(TAG, "Intent %d unlocked at level %d", i, new_level);
+    }
+}
+
+g_snapshot.pet.dirty_flags |= PET_DIRTY_LEVEL | PET_DIRTY_HP | PET_DIRTY_STATS | PET_DIRTY_PROF_LEVEL | PET_DIRTY_SKILLS | PET_DIRTY_PERKS | PET_DIRTY_SPELLS | PET_DIRTY_RESOURCES | PET_DIRTY_MANEUVERS;
 
 emit_level_up_event(new_level);
 storage_save_pet_delta(g_snapshot.pet.dirty_flags, &g_snapshot.pet);
 g_snapshot.pet.dirty_flags = 0;
 
 ESP_LOGI(TAG, "LEVEL UP! Now level %d", new_level);
-}
-
-#define ABILITY_USE_CHANCE 20
-#define ABILITY_USE_DC 15
-
-static bool try_use_ability(int16_t *damage, enemy_t *target)
-{
-if (g_snapshot.pet.ability_points == 0) return false;
-if (g_snapshot.pet.skill_count == 0 && g_snapshot.pet.spells_known_count == 0) return false;
-
-uint8_t roll = (esp_random() % 100);
-if (roll > ABILITY_USE_CHANCE) return false;
-
-uint8_t d20_roll = ((esp_random() % 20) + 1);
-if (d20_roll < ABILITY_USE_DC) return false;
-
-g_snapshot.pet.ability_points--;
-
-uint8_t total_abilities = g_snapshot.pet.skill_count + g_snapshot.pet.spells_known_count;
-uint8_t chosen = esp_random() % total_abilities;
-
-if (chosen < g_snapshot.pet.skill_count) {
-ESP_LOGI(TAG, "Using skill slot %d (points remaining: %d)", chosen, g_snapshot.pet.ability_points);
-*damage += rules_roll_dice(8) + rules_get_modifier(g_snapshot.pet.str);
-} else {
-uint8_t spell_idx = chosen - g_snapshot.pet.skill_count;
-ESP_LOGI(TAG, "Using spell slot %d (points remaining: %d)", spell_idx, g_snapshot.pet.ability_points);
-*damage += rules_roll_multiple(2, 6) + rules_get_modifier(g_snapshot.pet.intel);
-}
-
-return true;
-}
-
-static int16_t calculate_sneak_attack_damage(void)
-{
-if (g_snapshot.pet.profession != PROF_ROGUE) return 0;
-if (g_snapshot.pet.sneak_attack_dice == 0) return 0;
-
-bool has_advantage = (esp_random() % 100) < 40;
-if (!has_advantage) return 0;
-
-return rules_roll_multiple(g_snapshot.pet.sneak_attack_dice, 6);
-}
-
-static bool try_use_superiority_die(int16_t *damage)
-{
-if (g_snapshot.pet.superiority_dice == 0) return false;
-if (g_snapshot.pet.superiority_dice_size == 0) return false;
-if ((esp_random() % 100) >= 30) return false;
-
-g_snapshot.pet.superiority_dice--;
-uint8_t die_result = rules_roll_dice(g_snapshot.pet.superiority_dice_size);
-*damage += die_result;
-ESP_LOGI(TAG, "Superiority die: +%d damage (remaining: %d)", die_result, g_snapshot.pet.superiority_dice);
-return true;
 }
 
 static void try_second_wind(void)
@@ -327,119 +319,270 @@ if (g_snapshot.pet.hp > g_snapshot.pet.hp_max) g_snapshot.pet.hp = g_snapshot.pe
 ESP_LOGI(TAG, "Second Wind: healed %d HP", heal);
 }
 
-static void execute_pet_attack(enemy_t *target)
+static void calc_combat_inputs(pet_t *pet, enemy_t *enemy, float inputs[9], float quality_score)
 {
-int8_t dex_mod = rules_get_modifier(g_snapshot.pet.dex);
-int16_t attack_roll = (int16_t)rules_roll_d20() + dex_mod;
+    int8_t pet_dex_mod = rules_get_modifier(pet->dex);
+    int8_t pet_str_mod = rules_get_modifier(pet->str);
+    int16_t pet_ac = pet->combat.base_ac + pet_dex_mod;
 
-if (attack_roll >= target->ac) {
-int16_t base_damage = 0;
-uint8_t dice_count = 3 + g_snapshot.pet.bonuses.extra_dice;
+    int16_t roll_needed_hit = enemy->ac - pet_dex_mod;
+    if (roll_needed_hit < 2) roll_needed_hit = 2;
+    if (roll_needed_hit > 20) roll_needed_hit = 20;
+    float hit_prob = (21.0f - (float)roll_needed_hit) / 20.0f;
 
-switch (g_snapshot.pet.profession) {
-case PROF_WARRIOR:
-base_damage = rules_roll_multiple(dice_count, 6);
-try_use_superiority_die(&base_damage);
-break;
-case PROF_MAGE:
-base_damage = rules_roll_multiple(1 + g_snapshot.pet.bonuses.extra_dice, 20);
-break;
-case PROF_ROGUE: {
-uint8_t crit_bonus = g_snapshot.pet.bonuses.crit;
-for (uint8_t j = 0; j < dice_count; j++) {
-uint8_t d = rules_roll_dice(4);
-if (rules_random_chance(15 + crit_bonus)) {
-d *= 2;
-}
-base_damage += d;
-}
-int16_t sneak_damage = calculate_sneak_attack_damage();
-if (sneak_damage > 0) {
-base_damage += sneak_damage;
-}
-break;
-}
-default:
-base_damage = rules_roll_multiple(g_snapshot.pet.combat.dice_count, g_snapshot.pet.combat.damage_dice) + g_snapshot.pet.combat.damage_bonus;
-break;
-}
+    int16_t roll_needed_def = pet_ac - enemy->attack_bonus;
+    if (roll_needed_def < 2) roll_needed_def = 2;
+    if (roll_needed_def > 20) roll_needed_def = 20;
+    float defense_prob = (21.0f - (float)roll_needed_def) / 20.0f;
 
-int8_t str_mod = rules_get_modifier(g_snapshot.pet.str);
-int16_t damage = base_damage + str_mod + g_snapshot.pet.bonuses.min_damage;
-if (damage < 1) damage = 1;
+    float enemy_hp_ratio = (enemy->hp_max > 0) ? (float)enemy->hp / (float)pet->hp : 1.0f;
+    float level_ratio = (pet->level > 0) ? (float)enemy->level / (float)pet->level : 1.0f;
 
-try_use_ability(&damage, target);
+    uint8_t dice_count = 3 + pet->bonuses.extra_dice;
+    float avg_pet_dmg = 0.0f;
+    switch (pet->profession) {
+        case 0:
+            avg_pet_dmg = dice_count * 3.5f + pet_str_mod + pet->bonuses.min_damage;
+            break;
+        case 1:
+            avg_pet_dmg = (1 + pet->bonuses.extra_dice) * 10.5f + pet_str_mod + pet->bonuses.min_damage;
+            break;
+        case 2:
+            avg_pet_dmg = dice_count * 4.0f + pet_str_mod + pet->bonuses.min_damage;
+            break;
+        default:
+            avg_pet_dmg = pet->combat.dice_count * ((pet->combat.damage_dice + 1) / 2.0f) + pet->combat.damage_bonus + pet_str_mod + pet->bonuses.min_damage;
+            break;
+    }
+    float avg_enemy_dmg = ((enemy->damage_dice + 1) / 2.0f) + enemy->damage_bonus;
 
-target->hp -= damage;
-if (target->hp < 0) target->hp = 0;
+    float dmg_efficiency = (enemy->hp > 0) ? avg_pet_dmg / (float)enemy->hp : 1.0f;
+    float threat_level = (pet->hp > 0) ? avg_enemy_dmg / (float)pet->hp : 1.0f;
 
-g_combat_result.pet_damage_this_frame = damage;
-g_combat_result.pet_hit_this_frame = true;
-
-if (target->hp <= 0) {
-target->alive = false;
-}
-} else {
-g_combat_result.pet_damage_this_frame = 0;
-g_combat_result.pet_hit_this_frame = false;
-}
+    inputs[0] = (float)pet->hp / pet->hp_max;
+    inputs[1] = (float)pet->energy / pet->energy_max;
+    inputs[2] = hit_prob;
+    inputs[3] = defense_prob;
+    inputs[4] = enemy_hp_ratio;
+    inputs[5] = level_ratio;
+    inputs[6] = dmg_efficiency;
+    inputs[7] = threat_level;
+    inputs[8] = quality_score;
 }
 
-static void execute_enemy_attack(enemy_t *enemy)
+static combat_action_e decide_combat_action(pet_t *pet, enemy_t *enemy)
 {
-if (!enemy->alive || !g_snapshot.pet.is_alive) return;
+    uint8_t forced_intention;
+    if (exploration_manager_should_force(pet->level, &pet->dna, &forced_intention)) {
+        exploration_manager_on_use(forced_intention);
+        uint8_t skill_id = skill_resolver_resolve(pet, forced_intention);
+        if (skill_id != 0xFF) {
+            g_resolved_skill_id = skill_id;
+            ESP_LOGI(TAG, "Forced intention %d -> skill %d", forced_intention, skill_id);
+            return ACTION_SKILL;
+        }
+        ESP_LOGW(TAG, "Forced intention %d but no skill, falling through", forced_intention);
+    }
 
-int8_t enemy_mod = enemy->attack_bonus;
-int8_t pet_ac = g_snapshot.pet.combat.base_ac + rules_get_modifier(g_snapshot.pet.dex);
-int16_t enemy_attack_roll = (int16_t)rules_roll_d20() + enemy_mod;
+    uint8_t num_actions = dna_engine_get_unlocked_actions(&g_snapshot.pet.dna, pet->level);
 
-if (enemy_attack_roll >= pet_ac) {
-int16_t enemy_damage = rules_roll_dice(enemy->damage_dice) + enemy->damage_bonus;
-g_snapshot.pet.hp -= enemy_damage;
-if (g_snapshot.pet.hp < 0) g_snapshot.pet.hp = 0;
+    float input[9];
 
-g_combat_result.enemy_damage_this_frame = enemy_damage;
-g_combat_result.enemy_hit_this_frame = true;
+    calc_combat_inputs(pet, enemy, input, g_last_quality_score);
 
-if (g_snapshot.pet.hp <= 0) {
-g_snapshot.pet.is_alive = false;
-}
-} else {
-g_combat_result.enemy_damage_this_frame = 0;
-g_combat_result.enemy_hit_this_frame = false;
-}
+    if (inference_engine_is_loaded()) {
+        float features[16];
+        esp_err_t ret = inference_engine_run(input, 9, features, 16);
+        if (ret == ESP_OK) {
+            float scores[PPO_MAX_ACTIONS];
+            ret = policy_head_forward(&g_policy_head, features, scores);
+            if (ret == ESP_OK) {
+                uint8_t best_idx = 0;
+                float best_score = scores[0];
+                for (uint8_t i = 1; i < num_actions; i++) {
+                    if (scores[i] > best_score) {
+                        best_score = scores[i];
+                        best_idx = i;
+                    }
+                }
+
+                uint8_t skill_id = skill_resolver_resolve(pet, best_idx);
+                if (skill_id != 0xFF) {
+                    g_resolved_skill_id = skill_id;
+                    ESP_LOGI(TAG, "Inference: intention %d -> skill %d (score=%.3f)", best_idx, skill_id, best_score);
+                    return ACTION_SKILL;
+                }
+                ESP_LOGW(TAG, "Inference: intention %d has no skill, trying next", best_idx);
+            } else {
+                ESP_LOGW(TAG, "Policy head failed: %s", esp_err_to_name(ret));
+            }
+        } else {
+            ESP_LOGW(TAG, "Inference run failed: %s", esp_err_to_name(ret));
+        }
+    }
+
+    ESP_LOGD(TAG, "Fallback ATACAR (model not loaded or no skill)");
+    return ACTION_ATTACK;
 }
 
 static void simulate_combat_turn(void)
 {
-if (!g_snapshot.pet.is_alive || combat_engine_all_enemies_dead(&g_snapshot.encounter)) {
-return;
-}
+    if (!g_snapshot.pet.is_alive || combat_engine_all_enemies_dead(&g_snapshot.encounter)) {
+        ESP_LOGV(TAG, "simulate_combat_turn skipped: alive=%d, enemies_dead=%d",
+                 g_snapshot.pet.is_alive, combat_engine_all_enemies_dead(&g_snapshot.encounter));
+        return;
+    }
 
-uint8_t target_idx = combat_engine_select_first_alive(&g_snapshot.encounter);
-enemy_t *target = &g_snapshot.encounter.enemies[target_idx];
+    uint8_t target_idx = combat_engine_select_first_alive(&g_snapshot.encounter);
+    enemy_t *target = &g_snapshot.encounter.enemies[target_idx];
 
-g_combat_result.pet_hit_this_frame = false;
-g_combat_result.enemy_hit_this_frame = false;
-g_combat_result.pet_damage_this_frame = 0;
-g_combat_result.enemy_damage_this_frame = 0;
+    g_snapshot.combat.defend_bonus_ac = 0;
 
-if (g_snapshot.combat.pet_goes_first) {
-execute_pet_attack(target);
-if (target->alive && g_snapshot.pet.is_alive) {
-execute_enemy_attack(target);
-}
-} else {
-execute_enemy_attack(target);
-if (g_snapshot.pet.is_alive && target->alive) {
-execute_pet_attack(target);
-}
-}
+    g_combat_result.pet_hit_this_frame = false;
+    g_combat_result.enemy_hit_this_frame = false;
+    g_combat_result.pet_damage_this_frame = 0;
+    g_combat_result.enemy_damage_this_frame = 0;
 
-try_second_wind();
+    g_combat_log.turn_count++;
 
-g_combat_result.turns_this_frame++;
-g_combat_result.new_data = true;
+    if (g_combat_log.turn_count == 1) {
+        strncpy(g_combat_log.enemy_name, target->name, ENEMY_NAME_MAX_LEN - 1);
+        g_combat_log.enemy_name[ENEMY_NAME_MAX_LEN - 1] = '\0';
+        g_combat_log.enemy_hp_start = target->hp;
+        g_combat_log.enemy_hp_max = target->hp_max;
+        g_combat_log.pet_hp_start = g_snapshot.pet.hp;
+    }
+
+    int16_t pet_hp_before = g_snapshot.pet.hp;
+    int16_t enemy_hp_before = target->hp;
+
+    float state_before[9];
+    calc_combat_inputs(&g_snapshot.pet, target, state_before, g_last_quality_score);
+
+    combat_action_e action = decide_combat_action(&g_snapshot.pet, target);
+
+    uint8_t action_idx = 0;
+    if (action == ACTION_DEFEND) action_idx = 1;
+    else if (action == ACTION_FLEE) action_idx = 2;
+
+    if (g_snapshot.combat.pet_goes_first) {
+        switch (action) {
+            case ACTION_ATTACK:
+                g_combat_log.attack_count++;
+                combat_engine_player_attack(&g_snapshot.pet, target, &g_snapshot.combat);
+                break;
+            case ACTION_DEFEND:
+                g_combat_log.defend_count++;
+                combat_engine_player_attack_defend(&g_snapshot.pet, target, &g_snapshot.combat);
+                break;
+            case ACTION_FLEE:
+                g_combat_log.flee_count++;
+                if (combat_engine_try_flee(&g_snapshot.pet, &g_snapshot.encounter, &g_snapshot.combat)) {
+                    g_combat_log.flee_success++;
+                }
+                break;
+            case ACTION_SKILL:
+                g_combat_log.attack_count++;
+                combat_engine_player_attack(&g_snapshot.pet, target, &g_snapshot.combat);
+                break;
+            default:
+                combat_engine_player_attack(&g_snapshot.pet, target, &g_snapshot.combat);
+                break;
+        }
+
+        if (!g_snapshot.combat.fled && target->alive && g_snapshot.pet.is_alive) {
+            combat_engine_enemy_attack(target, &g_snapshot.pet, &g_snapshot.combat);
+        }
+    } else {
+        combat_engine_enemy_attack(target, &g_snapshot.pet, &g_snapshot.combat);
+        if (!g_snapshot.combat.fled && g_snapshot.pet.is_alive && target->alive) {
+            switch (action) {
+                case ACTION_ATTACK:
+                    g_combat_log.attack_count++;
+                    combat_engine_player_attack(&g_snapshot.pet, target, &g_snapshot.combat);
+                    break;
+                case ACTION_DEFEND:
+                    g_combat_log.defend_count++;
+                    combat_engine_player_attack_defend(&g_snapshot.pet, target, &g_snapshot.combat);
+                    break;
+                case ACTION_FLEE:
+                    g_combat_log.flee_count++;
+                    if (combat_engine_try_flee(&g_snapshot.pet, &g_snapshot.encounter, &g_snapshot.combat)) {
+                        g_combat_log.flee_success++;
+                    }
+                    break;
+                case ACTION_SKILL:
+                    g_combat_log.attack_count++;
+                    combat_engine_player_attack(&g_snapshot.pet, target, &g_snapshot.combat);
+                    break;
+                default:
+                    combat_engine_player_attack(&g_snapshot.pet, target, &g_snapshot.combat);
+                    break;
+            }
+        }
+    }
+
+    try_second_wind();
+
+    g_combat_log.total_damage_dealt += g_snapshot.combat.last_player_damage;
+    g_combat_log.total_damage_taken += g_snapshot.combat.last_enemy_damage;
+
+    int16_t pet_hp_after = g_snapshot.pet.hp;
+    int16_t enemy_hp_after = target->hp;
+
+    float state_after[9];
+    calc_combat_inputs(&g_snapshot.pet, target, state_after, g_last_quality_score);
+
+    reward_context_t reward_ctx = {
+        .damage_dealt = g_snapshot.combat.last_player_damage,
+        .damage_taken = g_snapshot.combat.last_enemy_damage,
+        .pet_hp_before = pet_hp_before,
+        .pet_hp_after = pet_hp_after,
+        .pet_hp_max = g_snapshot.pet.hp_max,
+        .enemy_hp_before = enemy_hp_before,
+        .enemy_hp_after = enemy_hp_after,
+        .enemy_hp_max = target->hp_max,
+        .enemy_killed = !target->alive,
+        .pet_died = !g_snapshot.pet.is_alive,
+        .fled = g_snapshot.combat.fled,
+        .action_taken = action_idx
+    };
+    float reward = reward_calculator_calc(&reward_ctx);
+
+    bool done = !g_snapshot.pet.is_alive || combat_engine_all_enemies_dead(&g_snapshot.encounter);
+    storage_replay_append(state_before, action_idx, reward, state_after, done);
+
+    combat_turn_t turn = {
+        .hit = g_snapshot.combat.player_hit,
+        .p_success = g_snapshot.combat.last_p_success,
+        .dmg_real = (float)g_snapshot.combat.last_player_damage,
+        .dmg_min = g_snapshot.combat.last_dmg_min,
+        .dmg_max = g_snapshot.combat.last_dmg_max,
+        .my_hp = (float)g_snapshot.pet.hp,
+        .enemy_hp = (float)target->hp,
+        .my_damage_taken = (float)g_snapshot.combat.last_enemy_damage,
+        .action_taken = action_idx
+    };
+    critic_history_add_turn(&g_combat_history, &turn);
+
+    float critic_features[CRITIC_FEATURE_COUNT];
+    critic_calc_features(&g_combat_history, critic_features);
+
+    if (g_critic_model.loaded) {
+        critic_model_forward(&g_critic_model, critic_features, &g_last_quality_score);
+    } else {
+        g_last_quality_score = 0.0f;
+    }
+
+    state_after[8] = g_last_quality_score;
+
+    experience_logger_log_step(state_before, action_idx, reward, state_after, done);
+
+    ESP_LOGI(TAG, "Transition logged: action=%d reward=%.4f done=%d quality=%.3f total=%lu",
+             action_idx, reward, done, g_last_quality_score, (unsigned long)storage_replay_get_total());
+
+    g_combat_result.turns_this_frame++;
+    g_combat_result.new_data = true;
 }
 
 static void finish_combat(void)
@@ -447,14 +590,31 @@ static void finish_combat(void)
 uint32_t total_exp = 0;
 uint8_t enemies_killed = 0;
 
+int16_t enemy_hp_end = 0;
 for (uint8_t i = 0; i < g_snapshot.encounter.count; i++) {
-if (!g_snapshot.encounter.enemies[i].alive) {
-total_exp += g_snapshot.encounter.enemies[i].exp_reward;
-enemies_killed++;
-}
+    enemy_hp_end = g_snapshot.encounter.enemies[i].hp;
+    if (!g_snapshot.encounter.enemies[i].alive) {
+        total_exp += g_snapshot.encounter.enemies[i].exp_reward;
+        enemies_killed++;
+    }
 }
 
-g_snapshot.pet.exp += total_exp;
+const char *outcome = (enemies_killed > 0) ? "VICTORY" : "DEFEAT";
+ESP_LOGI(TAG, "=== COMBAT SUMMARY ===");
+ESP_LOGI(TAG, "Enemy: %s HP %d->%d (%s) | Pet: HP %d->%d",
+         g_combat_log.enemy_name,
+         g_combat_log.enemy_hp_start, enemy_hp_end, outcome,
+         g_combat_log.pet_hp_start, g_snapshot.pet.hp);
+ESP_LOGI(TAG, "Turns: %d | ATK:%d DEF:%d FLEE:%d(%d ok) | DMG dealt:%d taken:%d | EXP:%d",
+         g_combat_log.turn_count,
+         g_combat_log.attack_count, g_combat_log.defend_count,
+         g_combat_log.flee_count, g_combat_log.flee_success,
+         g_combat_log.total_damage_dealt, g_combat_log.total_damage_taken,
+         g_combat_log.turn_count);
+ESP_LOGI(TAG, "======================");
+
+memset(&g_combat_log, 0, sizeof(g_combat_log));
+
 g_snapshot.pet.enemies_killed += enemies_killed;
 
 for (uint8_t i = 0; i < enemies_killed; i++) {
@@ -466,18 +626,36 @@ ESP_LOGI(TAG, "Gained 1 DP! (total: %lu)", (unsigned long)g_snapshot.pet.dp);
 
 resources_recover_short_rest(&g_snapshot.pet);
 
-g_snapshot.pet.dirty_flags |= PET_DIRTY_EXP | PET_DIRTY_DP | PET_DIRTY_RESOURCES;
+g_snapshot.pet.dirty_flags |= PET_DIRTY_DP | PET_DIRTY_RESOURCES;
 
 g_combat_result.combat_ended = true;
 g_combat_result.victory = combat_engine_all_enemies_dead(&g_snapshot.encounter);
 g_combat_result.new_data = true;
 
-ESP_LOGI(TAG, "Combat ended: victory=%d, exp=%lu", g_combat_result.victory, (unsigned long)total_exp);
+experience_logger_end_episode(g_combat_result.victory, g_snapshot.encounter.enemies[0].level);
 
 if (g_combat_result.victory) {
-if (g_snapshot.pet.exp >= g_snapshot.pet.exp_next) {
-transition_to(GS_LEVELUP);
-} else if (rest_should_rest(g_snapshot.pet.hp, g_snapshot.pet.hp_max, g_snapshot.pet.rest.hp_rest_threshold)) {
+    uint32_t total_trans = storage_replay_get_total();
+    uint32_t threshold = (uint32_t)g_snapshot.pet.level * 500;
+    uint32_t retry_buffer = 50;
+
+    if (total_trans >= threshold) {
+        static uint32_t s_last_attempt_trans = 0;
+        static uint8_t s_last_attempt_level = 0;
+
+        if (s_last_attempt_level == g_snapshot.pet.level && total_trans < s_last_attempt_trans + retry_buffer) {
+            if (rest_should_rest(g_snapshot.pet.hp, g_snapshot.pet.hp_max, g_snapshot.pet.rest.hp_rest_threshold)) {
+                rest_init(&g_snapshot.rest, &g_snapshot.pet);
+                transition_to(GS_RESTING);
+            } else {
+                transition_to(GS_VICTORY);
+            }
+        } else {
+            s_last_attempt_level = g_snapshot.pet.level;
+            s_last_attempt_trans = total_trans;
+            transition_to(GS_TRAINING);
+        }
+    } else if (rest_should_rest(g_snapshot.pet.hp, g_snapshot.pet.hp_max, g_snapshot.pet.rest.hp_rest_threshold)) {
 rest_init(&g_snapshot.rest, &g_snapshot.pet);
 transition_to(GS_RESTING);
 } else {
@@ -538,6 +716,15 @@ void game_coordinator_task(void *arg)
             rest_init(&g_snapshot.rest, &g_snapshot.pet);
             transition_to(GS_RESTING);
         }
+
+        if (!inference_engine_is_loaded()) {
+            esp_err_t ret = inference_engine_load_model("/sdcard/MODELS/backbone.espdl");
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Combat model not loaded, using fallback logic: %s", esp_err_to_name(ret));
+            }
+        }
+
+        storage_replay_init();
     }
     break;
 
@@ -568,8 +755,14 @@ uint8_t target_idx = combat_engine_select_first_alive(&g_snapshot.encounter);
 enemy_t *first_enemy = &g_snapshot.encounter.enemies[target_idx];
 combat_engine_roll_initiative(&g_snapshot.pet, first_enemy, &g_snapshot.combat);
 
+critic_history_init(&g_combat_history, (float)g_snapshot.pet.hp_max, (float)first_enemy->hp_max);
+g_last_quality_score = 0.0f;
+
 memset(&g_combat_result, 0, sizeof(g_combat_result));
+memset(&g_combat_log, 0, sizeof(g_combat_log));
 g_combat_active = true;
+
+experience_logger_start_episode();
 
 g_search_start_ms = 0;
 g_search_duration_ms = 0;
@@ -582,14 +775,29 @@ transition_to(GS_COMBAT);
     break;
 
             case GS_COMBAT:
-                if (!g_snapshot.pet.is_alive || combat_engine_all_enemies_dead(&g_snapshot.encounter)) {
-                    if (g_combat_active) {
-                        finish_combat();
-                        g_combat_active = false;
+                if (g_snapshot.combat.fled) {
+                    ESP_LOGD(TAG, "GS_COMBAT: flee branch (pet_alive=%d)", g_snapshot.pet.is_alive);
+                    experience_logger_end_episode(false, g_snapshot.encounter.enemies[0].level);
+                    g_snapshot.combat.fled = false;
+                    g_combat_active = false;
+                    g_search_start_ms = 0;
+                    transition_to(GS_SEARCHING);
+                    break;
+                }
+                {
+                    bool pet_dead = !g_snapshot.pet.is_alive;
+                    bool all_enemies_dead = combat_engine_all_enemies_dead(&g_snapshot.encounter);
+                    if (pet_dead || all_enemies_dead) {
+                        ESP_LOGD(TAG, "GS_COMBAT: end branch pet_dead=%d all_enemies_dead=%d active=%d",
+                                 pet_dead, all_enemies_dead, g_combat_active);
+                        if (g_combat_active) {
+                            finish_combat();
+                            g_combat_active = false;
+                        }
+                    } else {
+                        simulate_combat_turn();
+                        taskYIELD();
                     }
-                } else {
-                    simulate_combat_turn();
-                    taskYIELD();
                 }
                 break;
 
@@ -608,9 +816,57 @@ case GS_VICTORY:
     }
     break;
 
-case GS_LEVELUP:
-    process_level_up();
-    g_search_start_ms = 0;
+case GS_TRAINING:
+{
+    uint32_t total_before_training = storage_replay_get_total();
+    ESP_LOGI(TAG, "Starting PPO training... total_from_storage=%lu", (unsigned long)total_before_training);
+
+    training_mode_update_status("Entrenando modelo...");
+
+    uint8_t num_actions = dna_engine_get_unlocked_actions(&g_snapshot.pet.dna, g_snapshot.pet.level);
+
+    if (g_policy_head.num_actions == 0) {
+        esp_err_t ret = policy_head_init(&g_policy_head, num_actions);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Policy head init failed: %s", esp_err_to_name(ret));
+            transition_to(GS_SEARCHING);
+            break;
+        }
+        policy_head_load(&g_policy_head);
+    }
+
+    if (num_actions > g_policy_head.num_actions) {
+        ESP_LOGI(TAG, "Expanding policy head: %d -> %d actions",
+                 g_policy_head.num_actions, num_actions);
+        policy_head_expand(&g_policy_head, num_actions);
+        storage_replay_set_action_count(num_actions);
+    }
+
+    ppo_config_t config = ppo_config_default();
+    training_progress_t progress = {0};
+
+    esp_err_t ret = ppo_train_policy(&g_policy_head, &config, &progress);
+
+    if (ret == ESP_OK && progress.accepted) {
+        ESP_LOGI(TAG, "Training done, loss=%.4f", progress.loss);
+        training_mode_update_status("Entrenamiento completo!");
+
+        uint32_t next_epoch = 0;
+        ppo_find_latest_checkpoint(&next_epoch);
+        ppo_save_checkpoint(&g_policy_head, next_epoch + 1, progress.loss);
+
+        policy_head_save(&g_policy_head, next_epoch + 1);
+
+        process_level_up();
+        ESP_LOGI(TAG, "Level up! Pet is now level %d", g_snapshot.pet.level);
+    } else {
+        ESP_LOGW(TAG, "Training failed: staying at level %d (need %d more transitions)",
+                 g_snapshot.pet.level, 50);
+        training_mode_update_status("Entrenamiento fallido - reintentando...");
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+
     if (rest_should_rest(g_snapshot.pet.hp, g_snapshot.pet.hp_max, g_snapshot.pet.rest.hp_rest_threshold)) {
         rest_init(&g_snapshot.rest, &g_snapshot.pet);
         transition_to(GS_RESTING);
@@ -620,7 +876,8 @@ case GS_LEVELUP:
         rest_init(&g_snapshot.rest, &g_snapshot.pet);
         transition_to(GS_RESTING);
     }
-    break;
+}
+break;
 
         case GS_RESTING:
         {
@@ -671,6 +928,8 @@ break;
             }
             storage_save_pet_delta(g_snapshot.pet.dirty_flags, &g_snapshot.pet);
             g_snapshot.pet.dirty_flags = 0;
+            storage_replay_reset();
+            storage_checkpoints_reset();
             g_search_start_ms = 0;
             transition_to(GS_SEARCHING);
             break;

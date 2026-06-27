@@ -12,10 +12,14 @@ firmware/build/
 *.code-workspace
 
 # Python
-__pycache__/
+**/__pycache__/
 *.pyc
-.env/
+.env
+.env.*
+.venv/
 venv/
+.venv-ppq/
+
 
 # OS
 .DS_Store

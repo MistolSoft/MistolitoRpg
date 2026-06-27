@@ -85,9 +85,10 @@ typedef struct {
 } perk_t;
 
 typedef struct {
-uint8_t skill_id;
-uint8_t uses_remaining;
-uint8_t uses_max;
+    uint8_t skill_id;
+    uint8_t intent_type;
+    uint8_t uses_remaining;
+    uint8_t uses_max;
 } pet_skill_t;
 
 typedef struct {
@@ -111,6 +112,7 @@ typedef enum {
     GS_COMBAT,
     GS_VICTORY,
     GS_LEVELUP,
+    GS_TRAINING,
     GS_RESTING,
     GS_DEAD
 } game_state_e;
@@ -142,7 +144,6 @@ typedef enum {
 
 #define PET_DIRTY_NAME (1 << 0)
 #define PET_DIRTY_LEVEL (1 << 1)
-#define PET_DIRTY_EXP (1 << 2)
 #define PET_DIRTY_HP (1 << 3)
 #define PET_DIRTY_ENERGY (1 << 4)
 #define PET_DIRTY_STATS (1 << 5)
@@ -204,8 +205,8 @@ uint8_t second_wind_uses;
 uint8_t sneak_attack_dice;
 uint8_t arcane_recovery_used;
 uint8_t ability_points;
-uint8_t ability_points_max;
-uint16_t dirty_flags;
+    uint8_t ability_points_max;
+    uint16_t dirty_flags;
 bool is_alive;
 } pet_t;
 
@@ -233,20 +234,25 @@ typedef struct {
 } encounter_t;
 
 typedef struct {
-combat_phase_e phase;
-uint8_t round;
-uint8_t current_enemy_idx;
-combat_action_e selected_action;
-uint8_t selected_target_idx;
-int16_t last_player_damage;
-int16_t last_enemy_damage;
-bool player_hit;
-bool enemy_hit;
-bool animation_active;
-uint8_t turn_count;
-int8_t pet_initiative;
-int8_t enemy_initiative;
-bool pet_goes_first;
+    combat_phase_e phase;
+    uint8_t round;
+    uint8_t current_enemy_idx;
+    combat_action_e selected_action;
+    uint8_t selected_target_idx;
+    int16_t last_player_damage;
+    int16_t last_enemy_damage;
+    bool player_hit;
+    bool enemy_hit;
+    bool animation_active;
+    uint8_t turn_count;
+    int8_t pet_initiative;
+    int8_t enemy_initiative;
+    bool pet_goes_first;
+    bool fled;
+    uint8_t defend_bonus_ac;
+    float last_p_success;
+    float last_dmg_min;
+    float last_dmg_max;
 } combat_state_t;
 
 typedef struct {

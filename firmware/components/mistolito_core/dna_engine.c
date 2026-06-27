@@ -93,6 +93,7 @@ esp_err_t dna_init(dna_t *dna)
     dna_generate_hash(dna);
 
     dna_derive_all_stats(dna, dna->base_stats);
+    dna_derive_intent_unlock(dna);
 
     for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
         dna->caps[i] = dna->base_stats[i] + DNA_CAP_OFFSET;
@@ -174,6 +175,50 @@ void dna_derive_all_stats(dna_t *dna, uint8_t stats[DNA_STAT_COUNT])
 
     ESP_LOGI(TAG, "Stats derived: STR=%d DEX=%d CON=%d INT=%d WIS=%d CHA=%d",
              stats[0], stats[1], stats[2], stats[3], stats[4], stats[5]);
+}
+
+void dna_derive_intent_unlock(dna_t *dna)
+{
+    if (dna == NULL) {
+        return;
+    }
+
+    for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
+        uint8_t h = dna->hash[i * 4 + 3];
+        uint8_t roll = (h % 20) + 1;
+
+        if (roll <= 3) {
+            dna->intent_unlock[i] = 0;
+        } else if (roll <= 8) {
+            dna->intent_unlock[i] = 1;
+        } else if (roll <= 13) {
+            dna->intent_unlock[i] = 3;
+        } else if (roll <= 17) {
+            dna->intent_unlock[i] = 5;
+        } else {
+            dna->intent_unlock[i] = 8;
+        }
+    }
+
+    uint8_t initial_count = 0;
+    for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
+        if (dna->intent_unlock[i] == 1) {
+            initial_count++;
+        }
+    }
+
+    if (initial_count < 2) {
+        for (uint8_t i = 0; i < DNA_STAT_COUNT && initial_count < 2; i++) {
+            if (dna->intent_unlock[i] == 0) {
+                dna->intent_unlock[i] = 1;
+                initial_count++;
+            }
+        }
+    }
+
+    ESP_LOGI(TAG, "Intent unlock: ATK=%d DEF=%d HEAL=%d MAGIC=%d SUP=%d FLEE=%d",
+             dna->intent_unlock[0], dna->intent_unlock[1], dna->intent_unlock[2],
+             dna->intent_unlock[3], dna->intent_unlock[4], dna->intent_unlock[5]);
 }
 
 uint8_t dna_roll_d20(dna_t *dna, uint8_t stat_idx, uint32_t action_salt)
@@ -341,4 +386,15 @@ void dna_apply_levelup(dna_t *dna, uint8_t stats[DNA_STAT_COUNT], levelup_queue_
     }
 }
 
+uint8_t dna_engine_get_unlocked_actions(const dna_t *dna, uint8_t level)
+{
+    if (dna == NULL) return 1;
 
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
+        if (dna->intent_unlock[i] != 0 && dna->intent_unlock[i] <= level) {
+            count++;
+        }
+    }
+    return count > 0 ? count : 1;
+}

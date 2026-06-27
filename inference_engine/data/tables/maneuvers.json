@@ -1,0 +1,319 @@
+{
+  "maneuvers": [
+    {
+      "id": 0,
+      "name": "Commander's Strike",
+      "description": "Direct an ally to make an attack using their reaction, adding superiority die to damage",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "ally_cost": "reaction",
+      "effect": {
+        "ally_attack": true,
+        "damage_bonus": "superiority_die",
+        "requires_ally_hear_see": true
+      }
+    },
+    {
+      "id": 1,
+      "name": "Disarming Attack",
+      "description": "Force target to drop one item it's holding on failed STR save",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "save": {
+        "type": "str",
+        "dc_formula": "superiority_dc"
+      },
+      "effect": {
+        "damage_bonus": "superiority_die",
+        "disarm": true
+      }
+    },
+    {
+      "id": 2,
+      "name": "Distracting Strike",
+      "description": "Give next ally attack advantage against the target",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "effect": {
+        "damage_bonus": "superiority_die",
+        "next_ally_advantage": true
+      }
+    },
+    {
+      "id": 3,
+      "name": "Evasive Footwork",
+      "description": "Add superiority die to AC until you stop moving",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"dex": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "move",
+      "effect": {
+        "ac_bonus": "superiority_die",
+        "duration": "until_stop_moving"
+      }
+    },
+    {
+      "id": 4,
+      "name": "Feinting Attack",
+      "description": "Feint to gain advantage on next attack against that creature",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "bonus_action",
+      "effect": {
+        "advantage_next_attack": true,
+        "damage_bonus": "superiority_die"
+      }
+    },
+    {
+      "id": 5,
+      "name": "Goading Attack",
+      "description": "Target has disadvantage on attacks against others until your next turn",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "save": {
+        "type": "wis",
+        "dc_formula": "superiority_dc"
+      },
+      "effect": {
+        "damage_bonus": "superiority_die",
+        "target_disadvantage_vs_others": true,
+        "duration": "until_your_next_turn"
+      }
+    },
+    {
+      "id": 6,
+      "name": "Lunging Attack",
+      "description": "Increase reach by 5 feet for this attack",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "effect": {
+        "reach_bonus": 5,
+        "damage_bonus": "superiority_die"
+      }
+    },
+    {
+      "id": 7,
+      "name": "Maneuvering Attack",
+      "description": "Ally can move half their speed without opportunity attacks",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "effect": {
+        "damage_bonus": "superiority_die",
+        "ally_move": "half_speed",
+        "ally_no_opportunity_attack": true
+      }
+    },
+    {
+      "id": 8,
+      "name": "Menacing Attack",
+      "description": "Frighten target until the end of your next turn",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "save": {
+        "type": "wis",
+        "dc_formula": "superiority_dc"
+      },
+      "effect": {
+        "damage_bonus": "superiority_die",
+        "frightened": true,
+        "duration": "end_of_your_next_turn"
+      }
+    },
+    {
+      "id": 9,
+      "name": "Parry",
+      "description": "Reduce damage from a melee attack by superiority die + DEX mod",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"dex": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "reaction",
+      "trigger": "melee_attack_hits",
+      "effect": {
+        "damage_reduction": "superiority_die + dex_mod"
+      }
+    },
+    {
+      "id": 10,
+      "name": "Precision Attack",
+      "description": "Add superiority die to your attack roll",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "timing": "before_or_after_roll",
+      "effect": {
+        "attack_bonus": "superiority_die"
+      }
+    },
+    {
+      "id": 11,
+      "name": "Pushing Attack",
+      "description": "Push target 15 feet away on failed STR save",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "save": {
+        "type": "str",
+        "dc_formula": "superiority_dc"
+      },
+      "effect": {
+        "damage_bonus": "superiority_die",
+        "push": 15
+      }
+    },
+    {
+      "id": 12,
+      "name": "Rally",
+      "description": "Grant temporary HP equal to superiority die + CHA mod",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"cha": 12},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "bonus_action",
+      "effect": {
+        "temp_hp": "superiority_die + cha_mod",
+        "range": 60
+      }
+    },
+    {
+      "id": 13,
+      "name": "Riposte",
+      "description": "Counter-attack when a creature misses you with a melee attack",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"dex": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "reaction",
+      "trigger": "melee_attack_misses",
+      "effect": {
+        "counter_attack": true,
+        "damage_bonus": "superiority_die"
+      }
+    },
+    {
+      "id": 14,
+      "name": "Sweeping Attack",
+      "description": "Deal superiority die damage to a second creature within 5 feet of original target",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "effect": {
+        "secondary_damage": "superiority_die",
+        "secondary_range": 5,
+        "same_attack_roll": true
+      }
+    },
+    {
+      "id": 15,
+      "name": "Trip Attack",
+      "description": "Knock target prone on failed STR save",
+      "level_req": 3,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"str": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "maneuver",
+      "resource_cost": "1 superiority die",
+      "action_type": "attack",
+      "save": {
+        "type": "str",
+        "dc_formula": "superiority_dc"
+      },
+      "effect": {
+        "damage_bonus": "superiority_die",
+        "knock_prone": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "resources": {
+    "warrior": {
+      "superiority_dice": {
+        "type": "dice_pool",
+        "subclass_req": "battle_master",
+        "dice_sides_by_level": {
+          "3": 8,
+          "10": 10,
+          "18": 12
+        },
+        "count_by_level": {
+          "3": 4,
+          "7": 5,
+          "15": 6
+        },
+        "recovery": "short_rest",
+        "save_dc_formula": "8 + proficiency + str_or_dex_mod"
+      },
+      "action_surge": {
+        "type": "ability_uses",
+        "count_by_level": {
+          "2": 1,
+          "17": 2
+        },
+        "recovery": "short_rest"
+      },
+      "second_wind": {
+        "type": "ability_uses",
+        "count": 1,
+        "recovery": "short_rest",
+        "effect_formula": "1d10 + level"
+      },
+      "indomitable": {
+        "type": "ability_uses",
+        "count_by_level": {
+          "9": 1,
+          "13": 2,
+          "17": 3
+        },
+        "recovery": "long_rest"
+      }
+    },
+    "mage": {
+      "spell_slots": {
+        "type": "spell_slots",
+        "slots_by_level": {
+          "1": {"1": 2},
+          "2": {"1": 3},
+          "3": {"1": 4, "2": 2},
+          "4": {"1": 4, "2": 3},
+          "5": {"1": 4, "2": 3, "3": 2},
+          "6": {"1": 4, "2": 3, "3": 3},
+          "7": {"1": 4, "2": 3, "3": 3, "4": 1},
+          "8": {"1": 4, "2": 3, "3": 3, "4": 2},
+          "9": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 1},
+          "10": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2},
+          "11": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1},
+          "12": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1},
+          "13": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1},
+          "14": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1},
+          "15": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1},
+          "16": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1},
+          "17": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1, "9": 1},
+          "18": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1, "9": 1},
+          "19": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1, "9": 2},
+          "20": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1, "9": 2}
+        },
+        "recovery": "long_rest"
+      },
+      "arcane_recovery": {
+        "type": "daily_ability",
+        "count": 1,
+        "recovery": "long_rest",
+        "slot_levels_recoverable": {
+          "1": 2,
+          "2": 1,
+          "3": 1,
+          "4": 1,
+          "5": 1
+        },
+        "max_total_level": "floor(level / 2)"
+      },
+      "spellcasting": {
+        "ability": "int",
+        "save_dc_formula": "8 + proficiency + int_mod",
+        "attack_bonus_formula": "proficiency + int_mod"
+      }
+    },
+    "rogue": {
+      "sneak_attack": {
+        "type": "damage_bonus",
+        "dice_count_by_level": {
+          "1": 1,
+          "3": 2,
+          "5": 3,
+          "7": 4,
+          "9": 5,
+          "11": 6,
+          "13": 7,
+          "15": 8,
+          "17": 9,
+          "19": 10
+        },
+        "dice_sides": 6,
+        "conditions": ["advantage_on_attack", "ally_within_5ft"],
+        "weapon_requirement": ["finesse", "ranged"]
+      },
+      "cunning_action": {
+        "type": "bonus_action_options",
+        "unlocked_level": 2,
+        "options": ["dash", "disengage", "hide"]
+      }
+    }
+  }
+}

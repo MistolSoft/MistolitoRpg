@@ -14,7 +14,7 @@ static const char *REQUIRED_FILES[] = {
 };
 
 static usb_file_transfer_t s_transfer = {0};
-static uint8_t *s_file_buffer = NULL;
+static FILE *s_sd_file = NULL;
 static usb_init_state_e s_state = USB_STATE_IDLE;
 static bool s_start_loop_requested = false;
 
@@ -74,7 +74,7 @@ static esp_err_t handle_file_start(const char *params, char *response, size_t re
 
     size_t file_size = (size_t)strtoul(size_str, NULL, 10);
 
-    if (file_size == 0 || file_size > USB_FILE_BUFFER_SIZE) {
+    if (file_size == 0) {
         snprintf(response, resp_len, "ERROR:INVALID_SIZE:%zu", file_size);
         return ESP_FAIL;
     }
@@ -86,17 +86,20 @@ static esp_err_t handle_file_start(const char *params, char *response, size_t re
     s_transfer.in_progress = true;
     s_state = USB_STATE_RECEIVING_FILE;
 
-    if (s_file_buffer) {
-        free(s_file_buffer);
-        s_file_buffer = NULL;
+    if (s_sd_file) {
+        fclose(s_sd_file);
+        s_sd_file = NULL;
     }
 
-    s_file_buffer = malloc(file_size + 1);
-    if (!s_file_buffer) {
-        snprintf(response, resp_len, "ERROR:NO_MEMORY");
+    char full_path[128];
+    snprintf(full_path, sizeof(full_path), "%s%s", MOUNT_POINT, s_transfer.filename);
+    s_sd_file = fopen(full_path, "w");
+    if (!s_sd_file) {
+        ESP_LOGE(TAG, "fopen failed: %s", full_path);
+        snprintf(response, resp_len, "ERROR:OPEN_FAILED:%s", s_transfer.filename);
         return ESP_FAIL;
     }
-    memset(s_file_buffer, 0, file_size + 1);
+    ESP_LOGI(TAG, "File opened for writing: %s (%zu bytes)", full_path, file_size);
 
     snprintf(response, resp_len, "FILE_RECV_START:%s:%zu", filename, file_size);
     return ESP_OK;
@@ -104,16 +107,27 @@ static esp_err_t handle_file_start(const char *params, char *response, size_t re
 
 static esp_err_t handle_file_data(const char *params, char *response, size_t resp_len)
 {
-    if (!s_transfer.in_progress) {
+    if (!s_transfer.in_progress || !s_sd_file) {
         snprintf(response, resp_len, "ERROR:NO_FILE_IN_PROGRESS");
         return ESP_FAIL;
     }
 
     size_t params_len = strlen(params);
-    size_t decoded_len = base64_decode(params, params_len, s_file_buffer + s_transfer.received_size);
+    uint8_t chunk[USB_DECODE_CHUNK_SIZE];
+    size_t decoded_len = base64_decode(params, params_len, chunk);
 
     if (decoded_len == 0) {
+        ESP_LOGE(TAG, "BASE64 decode failed, params_len=%zu", params_len);
         snprintf(response, resp_len, "ERROR:BASE64_DECODE_FAILED");
+        return ESP_FAIL;
+    }
+
+    size_t written = fwrite(chunk, 1, decoded_len, s_sd_file);
+    if (written != decoded_len) {
+        ESP_LOGE(TAG, "fwrite failed: wrote %zu of %zu", written, decoded_len);
+        snprintf(response, resp_len, "ERROR:WRITE_FAILED");
+        s_transfer.in_progress = false;
+        s_state = USB_STATE_ERROR;
         return ESP_FAIL;
     }
 
@@ -135,31 +149,18 @@ static esp_err_t handle_file_end(const char *params, char *response, size_t resp
 {
     (void)params;
     
-    if (!s_transfer.in_progress) {
+    if (!s_transfer.in_progress || !s_sd_file) {
         snprintf(response, resp_len, "ERROR:NO_FILE_IN_PROGRESS");
         return ESP_FAIL;
     }
 
-    char full_path[128];
-    snprintf(full_path, sizeof(full_path), "%s%s", MOUNT_POINT, s_transfer.filename);
-
-    esp_err_t ret = storage_save_file(full_path, s_file_buffer, s_transfer.received_size);
-    if (ret != ESP_OK) {
-        snprintf(response, resp_len, "ERROR:SAVE_FAILED:%s", s_transfer.filename);
-        s_transfer.in_progress = false;
-        s_state = USB_STATE_ERROR;
-        return ESP_FAIL;
-    }
+    fclose(s_sd_file);
+    s_sd_file = NULL;
 
     snprintf(response, resp_len, "FILE_RECV_OK:%s:%zu bytes saved", s_transfer.filename, s_transfer.received_size);
 
     s_transfer.in_progress = false;
     s_state = USB_STATE_IDLE;
-
-    if (s_file_buffer) {
-        free(s_file_buffer);
-        s_file_buffer = NULL;
-    }
 
     return ESP_OK;
 }
@@ -226,6 +227,111 @@ static esp_err_t handle_start_loop(const char *params, char *response, size_t re
     return ESP_OK;
 }
 
+static const char *base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+static void base64_encode_chunk(const uint8_t *data, size_t len, char *out, size_t *out_len)
+{
+    size_t i = 0;
+    size_t j = 0;
+    *out_len = 0;
+    while (i < len) {
+        uint32_t octet_a = i < len ? data[i++] : 0;
+        uint32_t octet_b = i < len ? data[i++] : 0;
+        uint32_t octet_c = i < len ? data[i++] : 0;
+        uint32_t triple = (octet_a << 16) + (octet_b << 8) + octet_c;
+        out[j++] = base64_chars[(triple >> 18) & 0x3F];
+        out[j++] = base64_chars[(triple >> 12) & 0x3F];
+        out[j++] = base64_chars[(triple >> 6) & 0x3F];
+        out[j++] = base64_chars[triple & 0x3F];
+    }
+    size_t padding = (3 - (len % 3)) % 3;
+    for (size_t p = 0; p < padding; p++) {
+        out[j - 1 - p] = '=';
+    }
+    *out_len = j;
+}
+
+static void usb_send_line(const char *line)
+{
+    usb_serial_jtag_write_bytes((const uint8_t *)line, strlen(line), pdMS_TO_TICKS(100));
+    usb_serial_jtag_write_bytes((const uint8_t *)"\n", 1, pdMS_TO_TICKS(100));
+}
+
+static void handle_dump_replay(const char *params, char *response, size_t resp_len)
+{
+    (void)params;
+    ESP_LOGI(TAG, "DUMP_REPLAY requested");
+
+    char found_dir[64] = {0};
+    char test_path[128];
+
+    for (uint8_t a = 1; a <= 10; a++) {
+        snprintf(test_path, sizeof(test_path), "/sdcard/BRAIN/COMBAT/replay_a%u/header.bin", a);
+        if (fopen(test_path, "rb")) {
+            snprintf(found_dir, sizeof(found_dir), "/sdcard/BRAIN/COMBAT/replay_a%u", a);
+            ESP_LOGI(TAG, "Found replay data in %s", found_dir);
+            break;
+        }
+    }
+
+    if (!found_dir[0]) {
+        snprintf(response, resp_len, "DUMP_ERROR:NO_REPLAY_DATA");
+        return;
+    }
+
+    char header_path[128];
+    snprintf(header_path, sizeof(header_path), "%s/header.bin", found_dir);
+    FILE *hf = fopen(header_path, "rb");
+    if (!hf) {
+        snprintf(response, resp_len, "DUMP_ERROR:NO_REPLAY_DATA");
+        return;
+    }
+
+    replay_header_t header;
+    if (fread(&header, sizeof(replay_header_t), 1, hf) != 1) {
+        fclose(hf);
+        snprintf(response, resp_len, "DUMP_ERROR:HEADER_READ_FAILED");
+        return;
+    }
+    fclose(hf);
+
+    char chunk_path[128];
+    for (uint32_t c = 1; c <= header.total_chunks; c++) {
+        snprintf(chunk_path, sizeof(chunk_path), "%s/chunk_%04lu.bin", found_dir, (unsigned long)c);
+        FILE *cf = fopen(chunk_path, "rb");
+        if (!cf) continue;
+
+        fseek(cf, 0, SEEK_END);
+        long file_size = ftell(cf);
+        fseek(cf, 0, SEEK_SET);
+
+        char start_line[256];
+        snprintf(start_line, sizeof(start_line), "FILE_START:%s/chunk_%04lu.bin:%ld", found_dir, (unsigned long)c, file_size);
+        usb_send_line(start_line);
+
+        uint8_t read_buf[48];
+        char b64_buf[64];
+        while (file_size > 0) {
+            size_t to_read = file_size > 48 ? 48 : (size_t)file_size;
+            size_t read_bytes = fread(read_buf, 1, to_read, cf);
+            if (read_bytes == 0) break;
+            file_size -= read_bytes;
+
+            size_t b64_len;
+            base64_encode_chunk(read_buf, read_bytes, b64_buf, &b64_len);
+            b64_buf[b64_len] = '\0';
+
+            char data_line[128];
+            snprintf(data_line, sizeof(data_line), "FILE_DATA:%s", b64_buf);
+            usb_send_line(data_line);
+        }
+        fclose(cf);
+        usb_send_line("FILE_END");
+    }
+
+    snprintf(response, resp_len, "DUMP_END:%lu", (unsigned long)header.total_transitions);
+}
+
 esp_err_t usb_process_command(const char *cmd_line, char *response, size_t resp_len)
 {
     if (strncmp(cmd_line, "CMD:", 4) != 0) {
@@ -234,16 +340,23 @@ esp_err_t usb_process_command(const char *cmd_line, char *response, size_t resp_
     }
 
     const char *cmd = cmd_line + 4;
+    const char *colon = strchr(cmd, ':');
 
-    char *saveptr;
-    char cmd_copy[256];
-    strncpy(cmd_copy, cmd, sizeof(cmd_copy) - 1);
-    cmd_copy[sizeof(cmd_copy) - 1] = '\0';
+    char command[32];
+    const char *params = "";
 
-    char *command = strtok_r(cmd_copy, ":", &saveptr);
-    const char *params = saveptr;
+    if (colon) {
+        size_t cmd_len = colon - cmd;
+        if (cmd_len >= sizeof(command)) cmd_len = sizeof(command) - 1;
+        memcpy(command, cmd, cmd_len);
+        command[cmd_len] = '\0';
+        params = colon + 1;
+    } else {
+        strncpy(command, cmd, sizeof(command) - 1);
+        command[sizeof(command) - 1] = '\0';
+    }
 
-    if (!command) {
+    if (strlen(command) == 0) {
         snprintf(response, resp_len, "ERROR:NO_COMMAND");
         return ESP_FAIL;
     }
@@ -264,6 +377,9 @@ esp_err_t usb_process_command(const char *cmd_line, char *response, size_t resp_
         return handle_wipe(params, response, resp_len);
     } else if (strcmp(command, "START_LOOP") == 0) {
         return handle_start_loop(params, response, resp_len);
+    } else if (strcmp(command, "DUMP_REPLAY") == 0) {
+        handle_dump_replay(params, response, resp_len);
+        return ESP_OK;
     } else {
         snprintf(response, resp_len, "ERROR:UNKNOWN_COMMAND:%s", command);
         return ESP_FAIL;
@@ -273,8 +389,8 @@ esp_err_t usb_process_command(const char *cmd_line, char *response, size_t resp_
 void usb_init_driver(void)
 {
     usb_serial_jtag_driver_config_t usb_config = {
-        .tx_buffer_size = 1024,
-        .rx_buffer_size = 1024,
+        .tx_buffer_size = 2048,
+        .rx_buffer_size = 8192,
     };
     usb_serial_jtag_driver_install(&usb_config);
 }
@@ -348,8 +464,8 @@ void usb_reset_state(void)
     s_state = USB_STATE_IDLE;
     s_start_loop_requested = false;
     s_transfer.in_progress = false;
-    if (s_file_buffer) {
-        free(s_file_buffer);
-        s_file_buffer = NULL;
+    if (s_sd_file) {
+        fclose(s_sd_file);
+        s_sd_file = NULL;
     }
 }

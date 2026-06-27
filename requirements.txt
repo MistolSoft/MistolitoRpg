@@ -1,0 +1,13 @@
+# Dependencias del Inference Engine
+tensorflow>=2.17
+numpy
+pandas
+scikit-learn
+tf2onnx
+onnxruntime
+
+# Dependencias de Scripts del proyecto (conversión de imágenes, comunicación, etc.)
+lz4
+pypng
+requests
+cbor2

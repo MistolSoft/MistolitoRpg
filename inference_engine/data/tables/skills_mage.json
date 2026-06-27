@@ -1,0 +1,102 @@
+{
+  "skills": [
+    {
+      "id": 100,
+      "name": "Arcane Recovery",
+      "description": "Recover spell slots during a short rest once per day",
+      "level_req": 1,
+      "profession_req": [2],
+      "stat_req": {"int": 10},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "daily",
+      "category": "feature",
+      "intent_type": "support",
+      "uses_per": "long_rest",
+      "uses_max": 1,
+      "action_type": "short_rest",
+      "effect": {
+        "recover_spell_slots": true,
+        "slot_levels": [1, 2],
+        "max_total_level": 2
+      }
+    },
+    {
+      "id": 101,
+      "name": "Spell Mastery",
+      "description": "Cast a 1st or 2nd level spell at will without expending a spell slot",
+      "level_req": 18,
+      "profession_req": [2],
+      "stat_req": {"int": 16},
+      "dp_cost": 15,
+      "success_dc": 16,
+      "type": "passive",
+      "category": "feature",
+      "intent_type": "magic",
+      "effect": {
+        "cast_at_will": true,
+        "spell_levels": [1, 2]
+      }
+    },
+    {
+      "id": 102,
+      "name": "Signature Spells",
+      "description": "Two 3rd level spells always prepared and can be cast once without a slot",
+      "level_req": 20,
+      "profession_req": [2],
+      "stat_req": {"int": 18},
+      "dp_cost": 20,
+      "success_dc": 18,
+      "type": "passive",
+      "category": "feature",
+      "intent_type": "magic",
+      "effect": {
+        "always_prepared": 2,
+        "spell_level": 3,
+        "free_cast": 1
+      }
+    }
+  ],
+  "learnable_spells": {
+    "cantrips": [
+      {"spell_ref": "fire_bolt", "level_req": 1, "dp_cost": 3, "success_dc": 6},
+      {"spell_ref": "ray_of_frost", "level_req": 1, "dp_cost": 3, "success_dc": 6},
+      {"spell_ref": "shocking_grasp", "level_req": 1, "dp_cost": 3, "success_dc": 6},
+      {"spell_ref": "acid_splash", "level_req": 1, "dp_cost": 3, "success_dc": 6},
+      {"spell_ref": "chill_touch", "level_req": 1, "dp_cost": 3, "success_dc": 6},
+      {"spell_ref": "poison_spray", "level_req": 1, "dp_cost": 3, "success_dc": 6},
+      {"spell_ref": "mage_hand", "level_req": 1, "dp_cost": 2, "success_dc": 5},
+      {"spell_ref": "minor_illusion", "level_req": 1, "dp_cost": 2, "success_dc": 5},
+      {"spell_ref": "prestidigitation", "level_req": 1, "dp_cost": 2, "success_dc": 5},
+      {"spell_ref": "light", "level_req": 1, "dp_cost": 2, "success_dc": 5},
+      {"spell_ref": "message", "level_req": 1, "dp_cost": 2, "success_dc": 5},
+      {"spell_ref": "true_strike", "level_req": 1, "dp_cost": 2, "success_dc": 5}
+    ],
+    "level_1": [
+      {"spell_ref": "magic_missile", "level_req": 1, "stat_req": {"int": 12}, "dp_cost": 6, "success_dc": 8},
+      {"spell_ref": "burning_hands", "level_req": 1, "stat_req": {"int": 12}, "dp_cost": 6, "success_dc": 8},
+      {"spell_ref": "thunderwave", "level_req": 1, "stat_req": {"int": 12}, "dp_cost": 6, "success_dc": 8},
+      {"spell_ref": "shield", "level_req": 1, "stat_req": {"int": 12}, "dp_cost": 6, "success_dc": 8},
+      {"spell_ref": "mage_armor", "level_req": 1, "stat_req": {"int": 12}, "dp_cost": 6, "success_dc": 8},
+      {"spell_ref": "sleep", "level_req": 1, "stat_req": {"int": 12}, "dp_cost": 6, "success_dc": 8},
+      {"spell_ref": "charm_person", "level_req": 1, "stat_req": {"int": 12}, "dp_cost": 6, "success_dc": 8},
+      {"spell_ref": "color_spray", "level_req": 1, "stat_req": {"int": 12}, "dp_cost": 6, "success_dc": 8}
+    ],
+    "level_2": [
+      {"spell_ref": "hold_person", "level_req": 1, "stat_req": {"int": 14}, "dp_cost": 8, "success_dc": 10},
+      {"spell_ref": "mirror_image", "level_req": 1, "stat_req": {"int": 14}, "dp_cost": 8, "success_dc": 10},
+      {"spell_ref": "invisibility", "level_req": 1, "stat_req": {"int": 14}, "dp_cost": 8, "success_dc": 10},
+      {"spell_ref": "scorching_ray", "level_req": 1, "stat_req": {"int": 14}, "dp_cost": 8, "success_dc": 10},
+      {"spell_ref": "misty_step", "level_req": 1, "stat_req": {"int": 14}, "dp_cost": 8, "success_dc": 10},
+      {"spell_ref": "web", "level_req": 1, "stat_req": {"int": 14}, "dp_cost": 8, "success_dc": 10}
+    ],
+    "level_3": [
+      {"spell_ref": "fireball", "level_req": 1, "stat_req": {"int": 16}, "dp_cost": 12, "success_dc": 14},
+      {"spell_ref": "lightning_bolt", "level_req": 1, "stat_req": {"int": 16}, "dp_cost": 12, "success_dc": 14},
+      {"spell_ref": "fly", "level_req": 1, "stat_req": {"int": 16}, "dp_cost": 12, "success_dc": 14},
+      {"spell_ref": "haste", "level_req": 1, "stat_req": {"int": 16}, "dp_cost": 12, "success_dc": 14},
+      {"spell_ref": "counterspell", "level_req": 1, "stat_req": {"int": 16}, "dp_cost": 12, "success_dc": 14},
+      {"spell_ref": "dispel_magic", "level_req": 1, "stat_req": {"int": 16}, "dp_cost": 12, "success_dc": 14}
+    ]
+  }
+}

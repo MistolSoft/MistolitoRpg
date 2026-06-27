@@ -1,0 +1,200 @@
+{
+  "skills": [
+    {
+      "id": 0,
+      "name": "Fighting Style: Archery",
+      "description": "+2 bonus to attack rolls with ranged weapons",
+      "level_req": 1,
+      "profession_req": [1],
+      "stat_req": {"dex": 12},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "fighting_style",
+      "intent_type": "attack",
+      "effect": {
+        "ranged_attack_bonus": 2
+      }
+    },
+    {
+      "id": 1,
+      "name": "Fighting Style: Defense",
+      "description": "+1 bonus to AC while wearing armor",
+      "level_req": 1,
+      "profession_req": [1],
+      "stat_req": {"con": 10},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "fighting_style",
+      "intent_type": "defend",
+      "effect": {
+        "ac_bonus": 1,
+        "requires_armor": true
+      }
+    },
+    {
+      "id": 2,
+      "name": "Fighting Style: Dueling",
+      "description": "+2 damage bonus when wielding one melee weapon in one hand",
+      "level_req": 1,
+      "profession_req": [1],
+      "stat_req": {"str": 12},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "fighting_style",
+      "intent_type": "attack",
+      "effect": {
+        "damage_bonus": 2,
+        "requires_one_handed_melee": true,
+        "no_other_weapons": true
+      }
+    },
+    {
+      "id": 3,
+      "name": "Fighting Style: Great Weapon Fighting",
+      "description": "Reroll 1s and 2s on damage dice with two-handed weapons",
+      "level_req": 1,
+      "profession_req": [1],
+      "stat_req": {"str": 14},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "fighting_style",
+      "intent_type": "attack",
+      "effect": {
+        "reroll_damage_1_2": true,
+        "requires_two_handed": true
+      }
+    },
+    {
+      "id": 4,
+      "name": "Fighting Style: Protection",
+      "description": "Use reaction to impose disadvantage on attack against adjacent creature",
+      "level_req": 1,
+      "profession_req": [1],
+      "stat_req": {"con": 12},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "reaction",
+      "category": "fighting_style",
+      "intent_type": "defend",
+      "effect": {
+        "reaction_disadvantage_attack": true,
+        "requires_shield": true
+      }
+    },
+    {
+      "id": 5,
+      "name": "Fighting Style: Two-Weapon Fighting",
+      "description": "Add ability modifier to damage of offhand weapon attack",
+      "level_req": 1,
+      "profession_req": [1],
+      "stat_req": {"dex": 12},
+      "dp_cost": 5,
+      "success_dc": 8,
+      "type": "passive",
+      "category": "fighting_style",
+      "intent_type": "attack",
+      "effect": {
+        "add_ability_mod_offhand": true
+      }
+    },
+    {
+      "id": 6,
+      "name": "Second Wind",
+      "description": "Regain 1d10 + fighter level hit points as bonus action",
+      "level_req": 1,
+      "profession_req": [1],
+      "stat_req": {"con": 10},
+      "dp_cost": 3,
+      "success_dc": 6,
+      "type": "active",
+      "category": "feature",
+      "intent_type": "heal",
+      "uses_per": "short_rest",
+      "uses_max": 1,
+      "action_type": "bonus_action",
+      "effect": {
+        "heal_dice": "1d10",
+        "heal_bonus": "level"
+      }
+    },
+    {
+      "id": 7,
+      "name": "Action Surge",
+      "description": "Take one additional action on your turn",
+      "level_req": 2,
+      "profession_req": [1],
+      "stat_req": {"str": 12},
+      "dp_cost": 8,
+      "success_dc": 10,
+      "type": "active",
+      "category": "feature",
+      "intent_type": "support",
+      "uses_per": "short_rest",
+      "uses_max": 1,
+      "uses_max_by_level": {"17": 2},
+      "action_type": "bonus_action",
+      "effect": {
+        "extra_action": 1
+      }
+    },
+    {
+      "id": 8,
+      "name": "Indomitable",
+      "description": "Reroll a failed saving throw, must use new result",
+      "level_req": 9,
+      "profession_req": [1],
+      "stat_req": {"con": 14},
+      "dp_cost": 12,
+      "success_dc": 14,
+      "type": "active",
+      "category": "feature",
+      "intent_type": "support",
+      "uses_per": "long_rest",
+      "uses_max_by_level": {"9": 1, "13": 2, "17": 3},
+      "action_type": "reaction",
+      "effect": {
+        "reroll_save": true
+      }
+    },
+    {
+      "id": 9,
+      "name": "Know Your Enemy",
+      "description": "Observe for 1 minute to learn if target is equal, superior, or inferior to you",
+      "level_req": 7,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"wis": 12},
+      "dp_cost": 6,
+      "success_dc": 10,
+      "type": "active",
+      "category": "subclass_feature",
+      "intent_type": "support",
+      "uses_per": "at_will",
+      "action_type": "1_minute",
+      "effect": {
+        "reveal_relative_power": true
+      }
+    },
+    {
+      "id": 10,
+      "name": "Relentless",
+      "description": "Regain one expended superiority die when rolling initiative with no dice remaining",
+      "level_req": 15,
+      "profession_req": [1],
+      "subclass_req": "battle_master",
+      "stat_req": {"con": 14},
+      "dp_cost": 8,
+      "success_dc": 12,
+      "type": "passive",
+      "category": "subclass_feature",
+      "intent_type": "support",
+      "effect": {
+        "regain_die_on_initiative": true
+      }
+    }
+  ]
+}
