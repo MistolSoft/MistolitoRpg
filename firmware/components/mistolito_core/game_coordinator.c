@@ -1,5 +1,5 @@
-#include "cJSON.h"
 #include "game_tables_structs.h"
+#include "spi_bus.h"
 
 #include "game_coordinator.h"
 #include "combat_engine.h"
@@ -750,7 +750,9 @@ void game_coordinator_task(void *arg)
         }
 
         if (!inference_engine_is_loaded()) {
+            spi_bus_lock();
             esp_err_t ret = inference_engine_load_model("/sdcard/MODELS/backbone.espdl");
+            spi_bus_unlock();
             if (ret != ESP_OK) {
                 ESP_LOGW(TAG, "Combat model not loaded, using fallback logic: %s", esp_err_to_name(ret));
             }

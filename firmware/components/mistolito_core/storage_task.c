@@ -280,8 +280,10 @@ bool storage_load_game_tables(void)
 
 bool storage_apply_profession_data(pet_t *pet, uint8_t profession_id)
 {
+    spi_bus_lock();
     FILE *f = fopen(MOUNT_POINT "/DATA/TABLES/professions.bin", "rb");
     if (!f) {
+        spi_bus_unlock();
         pet->rest.hp_rest_threshold = 60;
         pet->rest.recovery_chance = 75;
         pet->combat.base_ac = 12;
@@ -314,6 +316,7 @@ bool storage_apply_profession_data(pet_t *pet, uint8_t profession_id)
         }
     }
     fclose(f);
+    spi_bus_unlock();
 
     if (found) {
         ESP_LOGI(TAG, "Applied profession %d: HP=%d, EN=%d, AC=%d, dmg=%dd%d+%d",
@@ -342,8 +345,10 @@ bool storage_get_enemy_data(uint8_t enemy_id, uint8_t pet_level, enemy_t *enemy)
         return false;
     }
 
+    spi_bus_lock();
     FILE *f = fopen(MOUNT_POINT "/DATA/TABLES/enemies.bin", "rb");
     if (!f) {
+        spi_bus_unlock();
         ESP_LOGW(TAG, "storage_get_enemy_data: enemies.bin not found");
         return false;
     }
@@ -376,6 +381,7 @@ bool storage_get_enemy_data(uint8_t enemy_id, uint8_t pet_level, enemy_t *enemy)
         }
     }
     fclose(f);
+    spi_bus_unlock();
 
     if (found) {
         ESP_LOGI(TAG, "Enemy %d loaded: %s HP=%d AC=%d dmg=%dd%d+%d exp=%d",
@@ -389,8 +395,10 @@ bool storage_get_enemy_data(uint8_t enemy_id, uint8_t pet_level, enemy_t *enemy)
 
 uint8_t storage_get_random_enemy_id(uint8_t pet_level)
 {
+    spi_bus_lock();
     FILE *f_tier = fopen(MOUNT_POINT "/DATA/TABLES/enemy_tiers.bin", "rb");
     if (!f_tier) {
+        spi_bus_unlock();
         ESP_LOGW(TAG, "get_random_enemy: enemy_tiers.bin not found");
         return 0;
     }
@@ -409,6 +417,7 @@ uint8_t storage_get_random_enemy_id(uint8_t pet_level)
 
     FILE *f_enemy = fopen(MOUNT_POINT "/DATA/TABLES/enemies.bin", "rb");
     if (!f_enemy) {
+        spi_bus_unlock();
         ESP_LOGW(TAG, "get_random_enemy: enemies.bin not found");
         return 0;
     }
@@ -424,6 +433,7 @@ uint8_t storage_get_random_enemy_id(uint8_t pet_level)
         }
     }
     fclose(f_enemy);
+    spi_bus_unlock();
 
     ESP_LOGI(TAG, "Found %d enemies for tier %d", count, valid_tier);
 
@@ -439,11 +449,14 @@ uint8_t storage_get_random_enemy_id(uint8_t pet_level)
 
 bool storage_file_exists(const char *path)
 {
+    spi_bus_lock();
     FILE *f = fopen(path, "r");
     if (f) {
         fclose(f);
+        spi_bus_unlock();
         return true;
     }
+    spi_bus_unlock();
     return false;
 }
 
