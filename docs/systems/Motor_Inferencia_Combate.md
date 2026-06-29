@@ -1,135 +1,83 @@
-# **Motor de Inferencia para IA de Combate**
+# Motor de Inferencia para IA de Combate (Arquitectura Híbrida)
 
-Este documento describe el sistema de inteligencia artificial para la toma de decisiones tácticas del Pet durante el combate, basado en una red neuronal ligera ejecutada en el ESP32-S3.
-
----
-
-## **1. Concepto General**
-
-El sistema actual de combate selecciona acciones basándose en probabilidades aleatorias y condiciones básicas (HP bajo, recursos disponibles). El nuevo Motor de Inferencia reemplaza esta lógica con una red neuronal que recibe el estado actual del Pet y del enemigo, y decide la acción óptima entre tres opciones: atacar, defender o huir.
-
-El modelo de inferencia se almacena en la tarjeta SD, permitiendo su actualización sin necesidad de reflashear el firmware. Cada turno de combate, el ESP32-S3 ejecuta el modelo en el motor TFLite Micro, utilizando los recursos de PSRAM y Flash externos disponibles.
+> [!IMPORTANT]
+> El diseño original basado en modelos monolíticos TFLite Micro (`combat_ai.tflite`) ha sido reemplazado por la **Arquitectura Híbrida de Policy Head**. Este documento especifica el funcionamiento actual del sistema de toma de decisiones del Pet en combate.
 
 ---
 
-## **2. Entradas del Modelo (Input Layer)**
+## 1. Concepto General y Arquitectura
 
-La red recibe un vector normalizado que representa el estado completo del Pet y del enemigo en el momento de la decisión.
+Para permitir el aprendizaje en el dispositivo (on-device learning) sin sobrecargar los recursos limitados del ESP32-S3, el motor de inferencia se divide en una parte estática y otra dinámica (entrenable):
 
-### **A. Estado del Pet**
+```
+Input (9 states: 8 normalizados + 1 quality_score)
+    ↓
+ESP-DL Backbone (Estático, cargado desde SD como backbone.espdl)
+    ↓
+Feature Vector (16 floats)
+    ↓
+Policy Head (Entrenable en C puro, cargado desde policy_head.bin)
+    ↓
+Action Scores (N acciones activas)
+    ↓
+softmax → probabilidades → selección de acción (ACTION_ATTACK / ACTION_SKILL / ACTION_DEFEND / ACTION_FLEE)
+```
 
-| Variable | Rango Original | Descripción |
-|----------|----------------|-------------|
-| Salud (HP) | 0 - HP máximo | Vida actual del Pet |
-| Energía | 0 - Energía máxima | Capacidad de acción restante |
-| Fuerza (STR) | 3 - 18 | Atributo físico |
-| Destreza (DEX) | 3 - 18 | Atributo de agilidad |
-| Constitución (CON) | 3 - 18 | Atributo de resistencia |
-| Inteligencia (INT) | 3 - 18 | Atributo mental |
-| Sabiduría (WIS) | 3 - 18 | Atributo perceptual |
-| Carisma (CHA) | 3 - 18 | Atributo social |
-| Nivel (Level) | 1 - 50 | Nivel total del Pet |
-| Profesión (Class) | 0 - 3 | Novice, Warrior, Mage, Rogue |
-| Armadura (AC) | 10 - 20 | Clase de armadura base |
-| Dado de daño | 4 - 12 | Tamaño del dado de ataque base |
-| Bono de daño | 0 - 10 | Bonus fijo al daño base |
+### Componentes de la Arquitectura:
 
-### **B. Estado del Enemigo**
-
-| Variable | Rango Original | Descripción |
-|----------|----------------|-------------|
-| Salud (HP) | 0 - HP máximo | Vida actual del enemigo |
-| Armadura (AC) | 10 - 20 | Clase de armadura |
-| Bono de ataque | 0 - 15 | Modificador para acertar golpes |
-| Dado de daño | 4 - 12 | Tamaño del dado de daño enemigo |
-| Bono de daño | 0 - 10 | Bonus fijo al daño enemigo |
-| Nivel | 1 - 50 | Nivel o tier del enemigo |
-
-### **C. Preprocesamiento**
-
-Todas las variables se normalizan al rango [0.0, 1.0] antes de ingresar a la red. Las variables categóricas (profesión) se codifican como un valor escalar con significado ordinal.
+1. **ESP-DL Backbone (Estático)**: 
+   * Ejecutado con aceleración por hardware Xtensa en el ESP32-S3.
+   * Carga desde `/sdcard/BRAIN/COMBAT/backbone.espdl`.
+   * Recibe un vector de 9 entradas (8 de estado y 1 score del Critic) y produce un vector de características latentes (`16 floats`).
+2. **Policy Head (Entrenable en C)**:
+   * Consiste en una capa completamente conectada sencilla: una matriz de pesos `W[16 x N]` y un bias `b[N]`, donde `N` es la cantidad de acciones desbloqueadas.
+   * Se almacena como un archivo de floats binario simple `/sdcard/BRAIN/COMBAT/policy_head.bin` con su metadata correspondiente.
+   * El entrenamiento on-device mediante PPO optimiza únicamente esta capa, haciendo la actualización sumamente ligera (~0.8 KB en total).
+3. **Critic Model (C puro, Inferencia fija)**:
+   * Recibe las características resumidas del historial de los últimos turnos (`8 features`).
+   * Estructura: FC `8 -> 4 -> ReLU -> 4 -> 1 -> tanh`. Produce un score de calidad del combate `[-1.0, 1.0]`.
+   * Se pre-entrena en PC y se carga desde `/sdcard/BRAIN/COMBAT/critic.bin`.
 
 ---
 
-## **3. Salidas del Modelo (Output Layer)**
+## 2. Entradas del Modelo (Input Layer)
 
-La red produce tres valores de probabilidad que suman 1.0. La acción seleccionada es la de mayor probabilidad.
+El Backbone recibe un vector normalizado `[0.0, 1.0]` de 9 floats:
 
-| Salida | Descripción |
-|--------|-------------|
-| Atacar | Ejecuta el ataque básico o la rotación automática de skills actual |
-| Defender | Reduce el daño recibido durante el próximo turno enemigo |
-| Huir | Intenta escapar del combate |
+### A. Estado del Pet (Entradas 0-4)
+1. **Salud (HP)**: Normalizado con respecto al HP máximo.
+2. **Energía**: Normalizado con respecto a la energía máxima.
+3. **Nivel**: Nivel del Pet normalizado al rango máximo (1-50).
+4. **Profesión**: Escalar ordinal del tipo de clase (Novice, Warrior, Mage, Rogue).
+5. **Clase de Armadura (AC)**: Normalizado en base al rango 10-25.
 
-La red no controla la selección de enemigo target ni el uso de recursos especiales (superiority dice, action surge, spell slots). Estos aspectos siguen siendo gestionados por la lógica existente.
+### B. Estado del Enemigo (Entradas 5-7)
+6. **Salud del Enemigo (HP)**: Normalizado en base a su HP máximo.
+7. **Bono de Ataque del Enemigo**: Normalizado.
+8. **Nivel del Enemigo**: Nivel o tier normalizado.
 
----
-
-## **4. Arquitectura de la Red**
-
-El modelo es una red feed-forward completamente conectada (dense), diseñada para ser ejecutada eficientemente en el tensor array del ESP32-S3.
-
-| Capa | Neuronas | Activación |
-|------|----------|------------|
-| Entrada | ~20 | Normalización |
-| Oculta 1 | 32 | ReLU |
-| Oculta 2 | 16 | ReLU |
-| Salida | 3 | Softmax |
-
-### **Cuantización**
-
-El modelo se convierte a formato TFLite con cuantización post-training a enteros de 8 bits (int8). Esto reduce el tamaño del modelo y acelera la inferencia en hardware sin unidad de punto flotante dedicada.
-
-### **Tamaño estimado**
-
-Entre 8 KB y 20 KB una vez cuantizado, con un tensor arena de inferencia de aproximadamente 16 KB.
+### C. Contexto del Combate (Entrada 8)
+9. **Quality Score**: Generado por el Critic Model. Representa el desempeño táctico del Pet en base al historial reciente de turnos (suerte del hit, suerte del daño, ventaja de vida, momentum, etc.).
 
 ---
 
-## **5. Almacenamiento y Carga**
+## 3. Salidas y Toma de Decisiones
 
-| Elemento | Ubicación |
-|----------|-----------|
-| Modelo TFLite cuantizado | `/sdcard/MODELS/combat_ai.tflite` |
-| Tensor arena (runtime) | PSRAM (heap_caps_malloc con MALLOC_CAP_SPIRAM) |
-| Buffer del modelo | PSRAM o Flash según tamaño |
+La salida de la `Policy Head` pasa por una función Softmax para generar una distribución de probabilidad sobre las `N` acciones disponibles. Las acciones son dinámicas y se expanden conforme el Pet sube de nivel (ej. desbloqueando habilidades o conjuros).
 
-El modelo se lee desde la tarjeta SD al iniciar el sistema o al entrar al estado de combate. Si el archivo no existe, el sistema cae en la lógica de decisión aleatoria actual.
-
----
-
-## **6. Ciclo de Decisión en Combate**
-
-Por cada turno de combate, el flujo de decisión es:
-
-1. El coordinador del juego recolecta el estado actual del Pet y del enemigo activo
-2. Los valores se normalizan y se empaquetan en el tensor de entrada
-3. El motor TFLite Micro ejecuta la inferencia
-4. La salida Softmax se evalúa y se selecciona la acción con mayor probabilidad
-5. La acción seleccionada se ejecuta (atacar, defender o huir)
-
-El motor de inferencia no bloquea el loop principal; el tiempo de ejecución depende del tamaño del modelo pero se espera que sea inferior a 50 ms por inferencia.
+Las acciones son gestionadas a través del enumerado de combate:
+* **ACTION_ATTACK** (Ataque básico)
+* **ACTION_SKILL** (Habilidad o conjuro específico resuelto por `skill_resolver`)
+* **ACTION_DEFEND** (Estrategia defensiva)
+* **ACTION_FLEE** (Intento de huida)
 
 ---
 
-## **7. Dependencias del Sistema**
+## 4. Entrenamiento On-Device (PPO)
 
-| Componente | Propósito |
-|------------|-----------|
-| ESP-TFLite-Micro | Motor de inferencia TFLite para microcontroladores |
-| esp-nn | Librería de kernels optimizados para Tensilica |
-| SDMMC / VFS | Lectura del archivo .tflite desde la tarjeta SD |
-| PSRAM | Memoria para tensor arena y buffer del modelo |
+Cuando el Pet acumula suficientes transiciones de combate en el Replay Buffer de la SD, se dispara la fase de **Level Up** y se activa el **Modo Entrenamiento** (`GS_TRAINING`):
 
----
-
-## **8. Evolución Futura**
-
-Este sistema está diseñado para extenderse progresivamente:
-
-- **Modelo de selección de skills**: una red separada que elige qué skill o spell usar entre los disponibles
-- **Modelo de selección de target**: una red que decide qué enemigo atacar en combates múltiples
-- **Modelo de gestión de recursos**: una red que decide cuándo gastar recursos especiales (action surge, superiority dice, spell slots)
-- **Modelo de exploración**: una red para decidir direcciones o prioridades durante la fase de búsqueda
-
-Cada modelo adicional será un archivo TFLite independiente en la tarjeta SD, y se ejecutará según el contexto.
+1. Se suspende la UI de LVGL y se liberan buffers de renderizado en PSRAM (liberando ~200-350 KB).
+2. Se inicia la tarea del entrenador que corre PPO manual directamente en el dispositivo.
+3. Se actualizan los pesos `W` y bias `b` de la Policy Head procesando los mini-batches leídos del buffer en la SD.
+4. Tras converger, los nuevos pesos se persisten en `/sdcard/BRAIN/COMBAT/policy_head.bin`.

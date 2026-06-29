@@ -1,10 +1,12 @@
 #include "profession_engine.h"
+#include "game_tables_structs.h"
 #include "rules.h"
 #include "storage_task.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "cJSON.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "PROF";
 
@@ -19,71 +21,27 @@ bool profession_check_requirements(pet_t *pet, uint8_t profession_id)
         return false;
     }
 
-    const char *json = storage_get_game_tables_json();
-    if (!json) {
+    FILE *f = fopen("/sdcard/DATA/TABLES/professions.bin", "rb");
+    if (!f) {
         return false;
     }
 
-    cJSON *root = cJSON_Parse(json);
-    if (!root) {
-        return false;
-    }
-
-    cJSON *professions = cJSON_GetObjectItem(root, "professions");
-    if (!professions) {
-        cJSON_Delete(root);
-        return false;
-    }
-
-    bool meets_requirements = false;
-    cJSON *prof = NULL;
-    cJSON_ArrayForEach(prof, professions) {
-        cJSON *id_item = cJSON_GetObjectItem(prof, "id");
-        if (id_item && id_item->valueint == profession_id) {
-            cJSON *req = cJSON_GetObjectItem(prof, "req");
-            if (!req) {
-                meets_requirements = true;
-                break;
-            }
-
-            meets_requirements = true;
-
-            cJSON *str_req = cJSON_GetObjectItem(req, "str");
-            if (str_req && pet->str < str_req->valueint) {
-                meets_requirements = false;
-            }
-
-            cJSON *dex_req = cJSON_GetObjectItem(req, "dex");
-            if (dex_req && pet->dex < dex_req->valueint) {
-                meets_requirements = false;
-            }
-
-            cJSON *con_req = cJSON_GetObjectItem(req, "con");
-            if (con_req && pet->con < con_req->valueint) {
-                meets_requirements = false;
-            }
-
-            cJSON *int_req = cJSON_GetObjectItem(req, "int");
-            if (int_req && pet->intel < int_req->valueint) {
-                meets_requirements = false;
-            }
-
-            cJSON *wis_req = cJSON_GetObjectItem(req, "wis");
-            if (wis_req && pet->wis < wis_req->valueint) {
-                meets_requirements = false;
-            }
-
-            cJSON *cha_req = cJSON_GetObjectItem(req, "cha");
-            if (cha_req && pet->cha < cha_req->valueint) {
-                meets_requirements = false;
-            }
-
+    profession_record_t prof;
+    bool meets = false;
+    while (fread(&prof, sizeof(profession_record_t), 1, f) == 1) {
+        if (prof.id == profession_id) {
+            meets = true;
+            if (pet->str < prof.req_str) meets = false;
+            if (pet->con < prof.req_con) meets = false;
+            if (pet->dex < prof.req_dex) meets = false;
+            if (pet->intel < prof.req_int) meets = false;
+            if (pet->wis < prof.req_wis) meets = false;
+            if (pet->cha < prof.req_cha) meets = false;
             break;
         }
     }
-
-    cJSON_Delete(root);
-    return meets_requirements;
+    fclose(f);
+    return meets;
 }
 
 bool profession_try_change(pet_t *pet, uint8_t new_profession_id)
@@ -102,33 +60,29 @@ bool profession_try_change(pet_t *pet, uint8_t new_profession_id)
         return false;
     }
 
-    const char *json = storage_get_game_tables_json();
-    if (!json) {
+    FILE *f = fopen("/sdcard/DATA/TABLES/professions.bin", "rb");
+    if (!f) {
         return false;
     }
 
-    cJSON *root = cJSON_Parse(json);
-    if (!root) {
-        return false;
-    }
-
-    cJSON *professions = cJSON_GetObjectItem(root, "professions");
-    cJSON *prof = NULL;
+    profession_record_t prof;
     int dp_cost = 10;
     int success_dc = PROF_CHANGE_DC;
+    bool found = false;
 
-    cJSON_ArrayForEach(prof, professions) {
-        cJSON *id_item = cJSON_GetObjectItem(prof, "id");
-        if (id_item && id_item->valueint == new_profession_id) {
-            cJSON *dp_item = cJSON_GetObjectItem(prof, "dp_cost");
-            if (dp_item) dp_cost = dp_item->valueint;
-
-            cJSON *dc_item = cJSON_GetObjectItem(prof, "success_dc");
-            if (dc_item) success_dc = dc_item->valueint;
+    while (fread(&prof, sizeof(profession_record_t), 1, f) == 1) {
+        if (prof.id == new_profession_id) {
+            dp_cost = prof.dp_cost;
+            success_dc = prof.success_dc;
+            found = true;
             break;
         }
     }
-    cJSON_Delete(root);
+    fclose(f);
+
+    if (!found) {
+        return false;
+    }
 
     if (pet->dp < (uint32_t)dp_cost) {
         ESP_LOGI(TAG, "Not enough DP: have %lu, need %d", pet->dp, dp_cost);
@@ -212,98 +166,67 @@ void profession_get_bonus_stats(pet_t *pet, uint8_t stats[STAT_COUNT], uint8_t *
         return;
     }
 
-    const char *json = storage_get_game_tables_json();
-    if (!json) {
+    FILE *f = fopen("/sdcard/DATA/TABLES/professions.bin", "rb");
+    if (!f) {
         return;
     }
 
-    cJSON *root = cJSON_Parse(json);
-    if (!root) {
-        return;
-    }
-
-    cJSON *professions = cJSON_GetObjectItem(root, "professions");
-    cJSON *prof = NULL;
-
-    cJSON_ArrayForEach(prof, professions) {
-        cJSON *id_item = cJSON_GetObjectItem(prof, "id");
-        if (id_item && id_item->valueint == pet->profession) {
-            cJSON *bonus = cJSON_GetObjectItem(prof, "bonus_stats");
-            if (bonus && cJSON_IsArray(bonus)) {
-                cJSON *stat_name = NULL;
-                cJSON_ArrayForEach(stat_name, bonus) {
-                    if (strcmp(stat_name->valuestring, "str") == 0) stats[(*count)++] = STAT_STR;
-                    else if (strcmp(stat_name->valuestring, "dex") == 0) stats[(*count)++] = STAT_DEX;
-                    else if (strcmp(stat_name->valuestring, "con") == 0) stats[(*count)++] = STAT_CON;
-                    else if (strcmp(stat_name->valuestring, "int") == 0) stats[(*count)++] = STAT_INT;
-                    else if (strcmp(stat_name->valuestring, "wis") == 0) stats[(*count)++] = STAT_WIS;
-                    else if (strcmp(stat_name->valuestring, "cha") == 0) stats[(*count)++] = STAT_CHA;
-                }
-            }
+    profession_record_t prof;
+    while (fread(&prof, sizeof(profession_record_t), 1, f) == 1) {
+        if (prof.id == pet->profession) {
+            if (prof.bonus_str) stats[(*count)++] = STAT_STR;
+            if (prof.bonus_con) stats[(*count)++] = STAT_CON;
+            if (prof.bonus_dex) stats[(*count)++] = STAT_DEX;
+            if (prof.bonus_int) stats[(*count)++] = STAT_INT;
+            if (prof.bonus_wis) stats[(*count)++] = STAT_WIS;
+            if (prof.bonus_cha) stats[(*count)++] = STAT_CHA;
             break;
         }
     }
+    fclose(f);
+}
 
-    cJSON_Delete(root);
+static uint8_t profession_get_dice_count(uint8_t profession_id, uint8_t level)
+{
+    if (profession_id == PROF_WARRIOR || profession_id == PROF_ROGUE) {
+        return 3 + (level + 1) / 6;
+    }
+    if (profession_id == PROF_NONE) {
+        return 1 + (level + 1) / 6;
+    }
+    return 1;
 }
 
 void profession_apply_combat_stats(pet_t *pet)
 {
-if (pet == NULL || pet->profession == PROF_NONE) {
-return;
-}
+    if (pet == NULL || pet->profession == PROF_NONE) {
+        return;
+    }
 
-const char *json = storage_get_game_tables_json();
-if (!json) {
-return;
-}
+    FILE *f = fopen("/sdcard/DATA/TABLES/professions.bin", "rb");
+    if (!f) {
+        return;
+    }
 
-cJSON *root = cJSON_Parse(json);
-if (!root) {
-return;
-}
+    profession_record_t prof;
+    bool found = false;
+    while (fread(&prof, sizeof(profession_record_t), 1, f) == 1) {
+        if (prof.id == pet->profession) {
+            int8_t con_mod = rules_get_modifier(pet->con);
+            uint16_t hp_gain = (uint16_t)prof.hp_per_level + (con_mod > 0 ? con_mod : 0);
+            pet->hp_max += hp_gain;
+            ESP_LOGI(TAG, "HP gain: +%d (hit_dice=d%d, hp_per_level=%d, con_mod=%d)", 
+                     hp_gain, prof.hit_dice, prof.hp_per_level, con_mod);
+            found = true;
+            break;
+        }
+    }
+    fclose(f);
 
-cJSON *professions = cJSON_GetObjectItem(root, "professions");
-if (!professions) {
-cJSON_Delete(root);
-return;
-}
-
-cJSON *prof = NULL;
-cJSON_ArrayForEach(prof, professions) {
-cJSON *id_item = cJSON_GetObjectItem(prof, "id");
-if (id_item && id_item->valueint == pet->profession) {
-cJSON *hit_dice = cJSON_GetObjectItem(prof, "hit_dice");
-cJSON *hp_per_level = cJSON_GetObjectItem(prof, "hp_per_level");
-cJSON *damage_prog = cJSON_GetObjectItem(prof, "damage_progression");
-
-if (hit_dice && hp_per_level) {
-int8_t con_mod = rules_get_modifier(pet->con);
-uint16_t hp_gain = (uint16_t)hp_per_level->valueint + (con_mod > 0 ? con_mod : 0);
-pet->hp_max += hp_gain;
-ESP_LOGI(TAG, "HP gain: +%d (hit_dice=d%d, hp_per_level=%d, con_mod=%d)", 
-hp_gain, hit_dice->valueint, hp_per_level->valueint, con_mod);
-}
-
-if (damage_prog && cJSON_IsObject(damage_prog)) {
-char level_key[8];
-snprintf(level_key, sizeof(level_key), "%d", pet->profession_level);
-
-cJSON *level_entry = cJSON_GetObjectItem(damage_prog, level_key);
-if (level_entry) {
-cJSON *dice_count = cJSON_GetObjectItem(level_entry, "dice_count");
-if (dice_count) {
-pet->combat.dice_count = (uint8_t)dice_count->valueint;
-ESP_LOGI(TAG, "Dice count updated to %d", pet->combat.dice_count);
-}
-}
-}
-
-break;
-}
-}
-
-cJSON_Delete(root);
+    if (found) {
+        pet->combat.dice_count = profession_get_dice_count(pet->profession, pet->profession_level);
+        ESP_LOGI(TAG, "Dice count updated to %d", pet->combat.dice_count);
+    }
 }
 
 void profession_apply_level_bonuses(pet_t *pet, uint8_t profession_level)
@@ -312,60 +235,23 @@ void profession_apply_level_bonuses(pet_t *pet, uint8_t profession_level)
         return;
     }
 
-    const char *prof_names[] = {"novice", "warrior", "mage", "rogue"};
-    const char *prof_name = prof_names[pet->profession];
-
-    const char *json = storage_get_game_tables_json();
-    if (!json) {
+    FILE *f = fopen("/sdcard/DATA/TABLES/damage_progression.bin", "rb");
+    if (!f) {
         return;
     }
 
-    cJSON *root = cJSON_Parse(json);
-    if (!root) {
-        return;
-    }
-
-    cJSON *level_tables = cJSON_GetObjectItem(root, "level_tables");
-    if (!level_tables) {
-        cJSON_Delete(root);
-        return;
-    }
-
-    cJSON *prof_table = cJSON_GetObjectItem(level_tables, prof_name);
-    if (!prof_table) {
-        cJSON_Delete(root);
-        return;
-    }
-
-    cJSON *damage_prog = cJSON_GetObjectItem(prof_table, "damage_progression");
-    if (damage_prog && cJSON_IsArray(damage_prog)) {
-        cJSON *entry = NULL;
-        cJSON_ArrayForEach(entry, damage_prog) {
-            cJSON *level_item = cJSON_GetObjectItem(entry, "level");
-            if (level_item && level_item->valueint == profession_level) {
-                cJSON *min_dmg = cJSON_GetObjectItem(entry, "min_damage");
-                if (min_dmg) pet->bonuses.min_damage += min_dmg->valueint;
-
-                cJSON *max_dmg = cJSON_GetObjectItem(entry, "max_damage");
-                if (max_dmg) pet->bonuses.max_damage += max_dmg->valueint;
-
-                cJSON *extra_dice = cJSON_GetObjectItem(entry, "extra_dice");
-                if (extra_dice) pet->bonuses.extra_dice += extra_dice->valueint;
-
-                cJSON *crit = cJSON_GetObjectItem(entry, "crit");
-                if (crit) pet->bonuses.crit += crit->valueint;
-
-                cJSON *sneak = cJSON_GetObjectItem(entry, "sneak_dice");
-                if (sneak) pet->bonuses.sneak_dice += sneak->valueint;
-
-                cJSON *skill_uses = cJSON_GetObjectItem(entry, "skill_uses");
-                if (skill_uses) pet->bonuses.skill_uses += skill_uses->valueint;
-
-                ESP_LOGI(TAG, "Applied damage progression at prof_level %d", profession_level);
-                break;
-            }
+    damage_progression_record_t rec;
+    while (fread(&rec, sizeof(damage_progression_record_t), 1, f) == 1) {
+        if (rec.profession == pet->profession && rec.level == profession_level) {
+            pet->bonuses.min_damage += rec.min_damage;
+            pet->bonuses.max_damage += rec.max_damage;
+            pet->bonuses.extra_dice += rec.extra_dice;
+            pet->bonuses.crit += rec.crit;
+            pet->bonuses.sneak_dice += rec.sneak_dice;
+            pet->bonuses.skill_uses += rec.skill_uses;
+            ESP_LOGI(TAG, "Applied damage progression at prof_level %d", profession_level);
+            break;
         }
     }
-
-    cJSON_Delete(root);
+    fclose(f);
 }

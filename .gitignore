@@ -17,6 +17,8 @@ firmware/build/
 .env
 .env.*
 .venv/
+.venv311/
+venv311/
 venv/
 .venv-ppq/
 

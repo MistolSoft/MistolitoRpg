@@ -255,6 +255,12 @@
   ],
   
   "level_tables": {
+    "transition_intervals": [
+      {"max_level": 10, "transitions_per_level": 500},
+      {"max_level": 20, "transitions_per_level": 1000},
+      {"max_level": 50, "transitions_per_level": 2000},
+      {"max_level": 99999, "transitions_per_level": 5000}
+    ],
     "novice": {
       "stat_intervals": [
         {"level": 4, "stats": ["str", "con"], "advantage": [], "disadvantage": []},

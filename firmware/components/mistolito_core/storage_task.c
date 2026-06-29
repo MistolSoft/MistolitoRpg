@@ -1,10 +1,10 @@
 #include "storage_task.h"
+#include "game_tables_structs.h"
 #include "mistolito.h"
 #include "dna_engine.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "spi_bus.h"
-#include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "esp_vfs_fat.h"
@@ -83,224 +83,35 @@ void storage_task(void *arg)
             spi_bus_lock();
 
             switch (req.operation) {
-case STORAGE_OP_SAVE_PET_DELTA:
-    {
-        FILE *f = fopen(MOUNT_POINT "/BRAIN/PET/pet_data.json", "w");
-        if (f) {
-            fprintf(f, "{\"name\":\"%s\",\"level\":%d,\"profession_level\":%d,\"exp\":%lu,\"hp\":%d,\"hp_max\":%d,\"energy\":%d,\"profession\":%d,\"str\":%d,\"dex\":%d,\"con\":%d,\"int\":%d,\"wis\":%d,\"cha\":%d,\"dp\":%lu,\"enemies_killed\":%lu,\"lives\":%d,\"hp_rest_threshold\":%d,\"recovery_chance\":%d,\"base_ac\":%d,\"damage_dice\":%d,\"damage_bonus\":%d,\"dice_count\":%d,\"dna_salt\":%lu,\"skill_count\":%d,\"perk_count\":%d",
-            req.pet.pet->name, req.pet.pet->level, req.pet.pet->profession_level, (unsigned long)req.pet.pet->exp,
-            req.pet.pet->hp, req.pet.pet->hp_max, req.pet.pet->energy, req.pet.pet->profession,
-            req.pet.pet->str, req.pet.pet->dex, req.pet.pet->con,
-            req.pet.pet->intel, req.pet.pet->wis, req.pet.pet->cha,
-            (unsigned long)req.pet.pet->dp, (unsigned long)req.pet.pet->enemies_killed, req.pet.pet->lives,
-            req.pet.pet->rest.hp_rest_threshold, req.pet.pet->rest.recovery_chance,
-            req.pet.pet->combat.base_ac, req.pet.pet->combat.damage_dice, req.pet.pet->combat.damage_bonus, req.pet.pet->combat.dice_count,
-            (unsigned long)req.pet.pet->dna.salt, req.pet.pet->skill_count, req.pet.pet->perk_count);
-
-            fprintf(f, ",\"skills\":[");
-            for (uint8_t i = 0; i < req.pet.pet->skill_count; i++) {
-                if (i > 0) fprintf(f, ",");
-                fprintf(f, "{\"id\":%d,\"intent\":%d,\"uses\":%d}", req.pet.pet->skills[i].skill_id, req.pet.pet->skills[i].intent_type, req.pet.pet->skills[i].uses_remaining);
-            }
-            fprintf(f, "]");
-
-            fprintf(f, ",\"perks\":[");
-            for (uint8_t i = 0; i < req.pet.pet->perk_count; i++) {
-                if (i > 0) fprintf(f, ",");
-                fprintf(f, "{\"id\":%d}", req.pet.pet->perks[i].id);
-}
-fprintf(f, "]");
-
-fprintf(f, ",\"spell_slots\":[");
-for (uint8_t i = 0; i < 9; i++) {
-if (i > 0) fprintf(f, ",");
-fprintf(f, "%d", req.pet.pet->spell_slots.slots[i]);
-}
-fprintf(f, "]");
-
-fprintf(f, ",\"spell_slots_max\":[");
-for (uint8_t i = 0; i < 9; i++) {
-if (i > 0) fprintf(f, ",");
-fprintf(f, "%d", req.pet.pet->spell_slots_max[i]);
-}
-fprintf(f, "]");
-
-fprintf(f, ",\"spells_known\":[");
-for (uint8_t i = 0; i < req.pet.pet->spells_known_count; i++) {
-if (i > 0) fprintf(f, ",");
-fprintf(f, "{\"id\":\"%s\",\"level\":%d}", req.pet.pet->spells_known[i].id, req.pet.pet->spells_known[i].level);
-}
-fprintf(f, "]");
-
-fprintf(f, ",\"cantrips_known\":%d,\"cantrips_max\":%d", req.pet.pet->cantrips_known, req.pet.pet->cantrips_max);
-
-fprintf(f, ",\"action_surge_uses\":%d,\"action_surge_max\":%d", req.pet.pet->action_surge_uses, req.pet.pet->action_surge_max);
-fprintf(f, ",\"indomitable_uses\":%d,\"indomitable_max\":%d", req.pet.pet->indomitable_uses, req.pet.pet->indomitable_max);
-fprintf(f, ",\"second_wind_uses\":%d", req.pet.pet->second_wind_uses);
-fprintf(f, ",\"superiority_dice\":%d,\"superiority_dice_max\":%d,\"superiority_dice_size\":%d",
-req.pet.pet->superiority_dice, req.pet.pet->superiority_dice_max, req.pet.pet->superiority_dice_size);
-fprintf(f, ",\"sneak_attack_dice\":%d", req.pet.pet->sneak_attack_dice);
-fprintf(f, ",\"arcane_recovery_used\":%d", req.pet.pet->arcane_recovery_used);
-
-fprintf(f, ",\"maneuvers\":[");
-        for (uint8_t i = 0; i < req.pet.pet->maneuver_count; i++) {
-            if (i > 0) fprintf(f, ",");
-            fprintf(f, "{\"id\":%d}", req.pet.pet->maneuvers[i].maneuver_id);
-        }
-        fprintf(f, "]");
-
-fprintf(f, ",\"ability_points\":%d,\"ability_points_max\":%d", req.pet.pet->ability_points, req.pet.pet->ability_points_max);
-
-fprintf(f, "}");
-
-fclose(f);
-ESP_LOGI(TAG, "Pet saved (dirty=0x%04X)", req.pet.dirty_flags);
-        }
-    }
-    break;
-
-            case STORAGE_OP_LOAD_PET:
-            {
-                FILE *f = fopen(MOUNT_POINT "/BRAIN/PET/pet_data.json", "r");
-                if (f) {
-                    char buf[512];
-                    size_t len = fread(buf, 1, sizeof(buf) - 1, f);
-                    buf[len] = '\0';
-                    fclose(f);
-
-                    cJSON *root = cJSON_Parse(buf);
-                    if (root) {
-                        cJSON *item;
-if ((item = cJSON_GetObjectItem(root, "name"))) {
-    strncpy(req.pet.pet->name, item->valuestring, PET_NAME_MAX_LEN - 1);
-}
-if ((item = cJSON_GetObjectItem(root, "level"))) req.pet.pet->level = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "profession_level"))) req.pet.pet->profession_level = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "exp"))) req.pet.pet->exp = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "hp"))) req.pet.pet->hp = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "hp_max"))) req.pet.pet->hp_max = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "energy"))) req.pet.pet->energy = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "str"))) req.pet.pet->str = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "dex"))) req.pet.pet->dex = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "con"))) req.pet.pet->con = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "int"))) req.pet.pet->intel = item->valueint;
-                        if ((item = cJSON_GetObjectItem(root, "wis"))) req.pet.pet->wis = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "cha"))) req.pet.pet->cha = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "dp"))) req.pet.pet->dp = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "enemies_killed"))) req.pet.pet->enemies_killed = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "lives"))) req.pet.pet->lives = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "hp_rest_threshold"))) req.pet.pet->rest.hp_rest_threshold = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "recovery_chance"))) req.pet.pet->rest.recovery_chance = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "base_ac"))) req.pet.pet->combat.base_ac = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "damage_dice"))) req.pet.pet->combat.damage_dice = item->valueint;
-            if ((item = cJSON_GetObjectItem(root, "damage_bonus"))) req.pet.pet->combat.damage_bonus = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "dice_count"))) req.pet.pet->combat.dice_count = item->valueint;
-
-    cJSON *skills_arr = cJSON_GetObjectItem(root, "skills");
-    if (skills_arr && cJSON_IsArray(skills_arr)) {
-        cJSON *skill_item = NULL;
-        cJSON_ArrayForEach(skill_item, skills_arr) {
-            if (req.pet.pet->skill_count < MAX_SKILLS) {
-                cJSON *id_item = cJSON_GetObjectItem(skill_item, "id");
-                cJSON *uses_item = cJSON_GetObjectItem(skill_item, "uses");
-                cJSON *intent_item = cJSON_GetObjectItem(skill_item, "intent");
-                if (id_item) {
-                    req.pet.pet->skills[req.pet.pet->skill_count].skill_id = (uint8_t)id_item->valueint;
-                    req.pet.pet->skills[req.pet.pet->skill_count].intent_type = intent_item ? (uint8_t)intent_item->valueint : 0;
-                    req.pet.pet->skills[req.pet.pet->skill_count].uses_remaining = uses_item ? (uint8_t)uses_item->valueint : 3;
-                    req.pet.pet->skills[req.pet.pet->skill_count].uses_max = 3;
-                    req.pet.pet->skill_count++;
-                }
-            }
-        }
-    }
-
-cJSON *perks_arr = cJSON_GetObjectItem(root, "perks");
-if (perks_arr && cJSON_IsArray(perks_arr)) {
-cJSON *perk_item = NULL;
-cJSON_ArrayForEach(perk_item, perks_arr) {
-if (req.pet.pet->perk_count < MAX_PERKS) {
-cJSON *id_item = cJSON_GetObjectItem(perk_item, "id");
-if (id_item) {
-req.pet.pet->perks[req.pet.pet->perk_count].id = (uint8_t)id_item->valueint;
-req.pet.pet->perk_count++;
-}
-}
-}
-}
-
-cJSON *spell_slots_arr = cJSON_GetObjectItem(root, "spell_slots");
-if (spell_slots_arr && cJSON_IsArray(spell_slots_arr)) {
-uint8_t idx = 0;
-cJSON *slot_item = NULL;
-cJSON_ArrayForEach(slot_item, spell_slots_arr) {
-if (idx < 9) req.pet.pet->spell_slots.slots[idx++] = (uint8_t)slot_item->valueint;
-}
-}
-
-cJSON *spell_slots_max_arr = cJSON_GetObjectItem(root, "spell_slots_max");
-if (spell_slots_max_arr && cJSON_IsArray(spell_slots_max_arr)) {
-uint8_t idx = 0;
-cJSON *slot_item = NULL;
-cJSON_ArrayForEach(slot_item, spell_slots_max_arr) {
-if (idx < 9) req.pet.pet->spell_slots_max[idx++] = (uint8_t)slot_item->valueint;
-}
-}
-
-cJSON *spells_known_arr = cJSON_GetObjectItem(root, "spells_known");
-if (spells_known_arr && cJSON_IsArray(spells_known_arr)) {
-cJSON *spell_item = NULL;
-cJSON_ArrayForEach(spell_item, spells_known_arr) {
-if (req.pet.pet->spells_known_count < MAX_SPELLS_KNOWN) {
-cJSON *id_item = cJSON_GetObjectItem(spell_item, "id");
-cJSON *level_item = cJSON_GetObjectItem(spell_item, "level");
-if (id_item) {
-strncpy(req.pet.pet->spells_known[req.pet.pet->spells_known_count].id, id_item->valuestring, sizeof(req.pet.pet->spells_known[0].id) - 1);
-req.pet.pet->spells_known[req.pet.pet->spells_known_count].level = level_item ? (uint8_t)level_item->valueint : 0;
-req.pet.pet->spells_known_count++;
-}
-}
-}
-}
-
-if ((item = cJSON_GetObjectItem(root, "cantrips_known"))) req.pet.pet->cantrips_known = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "cantrips_max"))) req.pet.pet->cantrips_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "action_surge_uses"))) req.pet.pet->action_surge_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "action_surge_max"))) req.pet.pet->action_surge_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "indomitable_uses"))) req.pet.pet->indomitable_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "indomitable_max"))) req.pet.pet->indomitable_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "second_wind_uses"))) req.pet.pet->second_wind_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice"))) req.pet.pet->superiority_dice = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice_max"))) req.pet.pet->superiority_dice_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice_size"))) req.pet.pet->superiority_dice_size = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "sneak_attack_dice"))) req.pet.pet->sneak_attack_dice = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "arcane_recovery_used"))) req.pet.pet->arcane_recovery_used = item->valueint;
-
-cJSON *maneuvers_arr = cJSON_GetObjectItem(root, "maneuvers");
-                if (maneuvers_arr && cJSON_IsArray(maneuvers_arr)) {
-                    cJSON *maneuver_item = NULL;
-                    cJSON_ArrayForEach(maneuver_item, maneuvers_arr) {
-                        if (req.pet.pet->maneuver_count < MAX_MANEUVERS_KNOWN) {
-                            cJSON *id_item = cJSON_GetObjectItem(maneuver_item, "id");
-                            if (id_item) {
-                                req.pet.pet->maneuvers[req.pet.pet->maneuver_count].maneuver_id = (uint8_t)id_item->valueint;
-                                req.pet.pet->maneuver_count++;
-                            }
-                        }
+            case STORAGE_OP_SAVE_PET_DELTA:
+                {
+                    FILE *f = fopen(MOUNT_POINT "/BRAIN/PET/pet_data.bin", "wb");
+                    if (f) {
+                        fwrite(req.pet.pet, sizeof(pet_t), 1, f);
+                        fclose(f);
+                        ESP_LOGI(TAG, "Pet saved in binary (dirty=0x%04X)", req.pet.dirty_flags);
+                    } else {
+                        ESP_LOGE(TAG, "Failed to open pet_data.bin for writing");
                     }
                 }
+                break;
 
-if ((item = cJSON_GetObjectItem(root, "ability_points"))) req.pet.pet->ability_points = item->valueint;
-                if ((item = cJSON_GetObjectItem(root, "ability_points_max"))) req.pet.pet->ability_points_max = item->valueint;
-
-cJSON_Delete(root);
-ESP_LOGI(TAG, "Pet loaded: %s Lv.%d (skills=%d, perks=%d, spells=%d, maneuvers=%d)", 
-req.pet.pet->name, req.pet.pet->level, req.pet.pet->skill_count, req.pet.pet->perk_count,
-req.pet.pet->spells_known_count, req.pet.pet->maneuver_count);
-}
-}
-}
-break;
+            case STORAGE_OP_LOAD_PET:
+                {
+                    FILE *f = fopen(MOUNT_POINT "/BRAIN/PET/pet_data.bin", "rb");
+                    if (f) {
+                        size_t read_bytes = fread(req.pet.pet, 1, sizeof(pet_t), f);
+                        fclose(f);
+                        if (read_bytes == sizeof(pet_t)) {
+                            ESP_LOGI(TAG, "Pet loaded from binary: %s Lv.%d", req.pet.pet->name, req.pet.pet->level);
+                        } else {
+                            ESP_LOGE(TAG, "Failed to load complete pet binary (%d != %d)", read_bytes, sizeof(pet_t));
+                        }
+                    } else {
+                        ESP_LOGW(TAG, "pet_data.bin not found");
+                    }
+                }
+                break;
 
             case STORAGE_OP_LOAD_TABLES:
                 break;
@@ -433,171 +244,20 @@ bool storage_load_pet(pet_t *pet)
     if (!g_mounted) return false;
 
     spi_bus_lock();
-
-    FILE *f = fopen(MOUNT_POINT "/BRAIN/PET/pet_data.json", "r");
+    FILE *f = fopen(MOUNT_POINT "/BRAIN/PET/pet_data.bin", "rb");
     if (!f) {
         spi_bus_unlock();
         return false;
     }
 
-    char buf[512];
-    size_t len = fread(buf, 1, sizeof(buf) - 1, f);
-    buf[len] = '\0';
+    size_t read_bytes = fread(pet, 1, sizeof(pet_t), f);
     fclose(f);
-
     spi_bus_unlock();
 
-    cJSON *root = cJSON_Parse(buf);
-    if (!root) return false;
-
-cJSON *item;
-if ((item = cJSON_GetObjectItem(root, "name"))) strncpy(pet->name, item->valuestring, PET_NAME_MAX_LEN - 1);
-if ((item = cJSON_GetObjectItem(root, "level"))) pet->level = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "profession_level"))) pet->profession_level = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "exp"))) pet->exp = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "hp"))) pet->hp = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "hp_max"))) pet->hp_max = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "energy"))) pet->energy = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "str"))) pet->str = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "dex"))) pet->dex = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "con"))) pet->con = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "int"))) pet->intel = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "wis"))) pet->wis = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "cha"))) pet->cha = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "dp"))) pet->dp = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "enemies_killed"))) pet->enemies_killed = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "lives"))) pet->lives = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "hp_rest_threshold"))) pet->rest.hp_rest_threshold = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "recovery_chance"))) pet->rest.recovery_chance = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "base_ac"))) pet->combat.base_ac = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "damage_dice"))) pet->combat.damage_dice = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "damage_bonus"))) pet->combat.damage_bonus = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "dice_count"))) pet->combat.dice_count = item->valueint;
-
-cJSON *skills_arr = cJSON_GetObjectItem(root, "skills");
-if (skills_arr && cJSON_IsArray(skills_arr)) {
-    cJSON *skill_item = NULL;
-    cJSON_ArrayForEach(skill_item, skills_arr) {
-        if (pet->skill_count < MAX_SKILLS) {
-            cJSON *id_item = cJSON_GetObjectItem(skill_item, "id");
-            cJSON *uses_item = cJSON_GetObjectItem(skill_item, "uses");
-            cJSON *intent_item = cJSON_GetObjectItem(skill_item, "intent");
-            if (id_item) {
-                pet->skills[pet->skill_count].skill_id = (uint8_t)id_item->valueint;
-                pet->skills[pet->skill_count].intent_type = intent_item ? (uint8_t)intent_item->valueint : 0;
-                pet->skills[pet->skill_count].uses_remaining = uses_item ? (uint8_t)uses_item->valueint : 3;
-                pet->skills[pet->skill_count].uses_max = 3;
-                pet->skill_count++;
-            }
-        }
+    if (read_bytes != sizeof(pet_t)) {
+        ESP_LOGE(TAG, "storage_load_pet: size mismatch (%d != %d)", read_bytes, sizeof(pet_t));
+        return false;
     }
-}
-
-cJSON *perks_arr = cJSON_GetObjectItem(root, "perks");
-if (perks_arr && cJSON_IsArray(perks_arr)) {
-cJSON *perk_item = NULL;
-cJSON_ArrayForEach(perk_item, perks_arr) {
-if (pet->perk_count < MAX_PERKS) {
-cJSON *id_item = cJSON_GetObjectItem(perk_item, "id");
-if (id_item) {
-pet->perks[pet->perk_count].id = (uint8_t)id_item->valueint;
-pet->perk_count++;
-}
-}
-}
-}
-
-cJSON *spell_slots_arr = cJSON_GetObjectItem(root, "spell_slots");
-if (spell_slots_arr && cJSON_IsArray(spell_slots_arr)) {
-uint8_t idx = 0;
-cJSON *slot_item = NULL;
-cJSON_ArrayForEach(slot_item, spell_slots_arr) {
-if (idx < 9) {
-pet->spell_slots.slots[idx++] = (uint8_t)slot_item->valueint;
-}
-}
-}
-
-cJSON *spell_slots_max_arr = cJSON_GetObjectItem(root, "spell_slots_max");
-if (spell_slots_max_arr && cJSON_IsArray(spell_slots_max_arr)) {
-uint8_t idx = 0;
-cJSON *slot_item = NULL;
-cJSON_ArrayForEach(slot_item, spell_slots_max_arr) {
-if (idx < 9) {
-pet->spell_slots_max[idx++] = (uint8_t)slot_item->valueint;
-}
-}
-}
-
-cJSON *spells_known_arr = cJSON_GetObjectItem(root, "spells_known");
-if (spells_known_arr && cJSON_IsArray(spells_known_arr)) {
-cJSON *spell_item = NULL;
-cJSON_ArrayForEach(spell_item, spells_known_arr) {
-if (pet->spells_known_count < MAX_SPELLS_KNOWN) {
-cJSON *id_item = cJSON_GetObjectItem(spell_item, "id");
-cJSON *level_item = cJSON_GetObjectItem(spell_item, "level");
-if (id_item) {
-strncpy(pet->spells_known[pet->spells_known_count].id, id_item->valuestring, sizeof(pet->spells_known[0].id) - 1);
-pet->spells_known[pet->spells_known_count].id[sizeof(pet->spells_known[0].id) - 1] = '\0';
-pet->spells_known[pet->spells_known_count].level = level_item ? (uint8_t)level_item->valueint : 0;
-pet->spells_known_count++;
-}
-}
-}
-}
-
-if ((item = cJSON_GetObjectItem(root, "cantrips_known"))) pet->cantrips_known = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "cantrips_max"))) pet->cantrips_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "action_surge_uses"))) pet->action_surge_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "action_surge_max"))) pet->action_surge_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "indomitable_uses"))) pet->indomitable_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "indomitable_max"))) pet->indomitable_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "second_wind_uses"))) pet->second_wind_uses = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice"))) pet->superiority_dice = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice_max"))) pet->superiority_dice_max = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "superiority_dice_size"))) pet->superiority_dice_size = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "sneak_attack_dice"))) pet->sneak_attack_dice = item->valueint;
-if ((item = cJSON_GetObjectItem(root, "arcane_recovery_used"))) pet->arcane_recovery_used = item->valueint;
-
-cJSON *maneuvers_arr = cJSON_GetObjectItem(root, "maneuvers");
-    if (maneuvers_arr && cJSON_IsArray(maneuvers_arr)) {
-        cJSON *maneuver_item = NULL;
-        cJSON_ArrayForEach(maneuver_item, maneuvers_arr) {
-            if (pet->maneuver_count < MAX_MANEUVERS_KNOWN) {
-                cJSON *id_item = cJSON_GetObjectItem(maneuver_item, "id");
-                if (id_item) {
-                    pet->maneuvers[pet->maneuver_count].maneuver_id = (uint8_t)id_item->valueint;
-                    pet->maneuver_count++;
-                }
-            }
-        }
-    }
-
-if ((item = cJSON_GetObjectItem(root, "ability_points"))) pet->ability_points = item->valueint;
-    if ((item = cJSON_GetObjectItem(root, "ability_points_max"))) pet->ability_points_max = item->valueint;
-
-uint32_t saved_salt = 0;
-    if ((item = cJSON_GetObjectItem(root, "dna_salt"))) saved_salt = (uint32_t)item->valueint;
-
-    pet->energy_max = MAX_ENERGY;
-    pet->is_alive = true;
-
-    cJSON_Delete(root);
-
-    storage_load_dna_codes_only(&pet->dna);
-
-    if (saved_salt != 0) {
-        pet->dna.salt = saved_salt;
-        ESP_LOGI(TAG, "Using saved salt: 0x%08lX", (unsigned long)pet->dna.salt);
-    } else {
-        pet->dna.salt = esp_random();
-        ESP_LOGI(TAG, "Generated new salt: 0x%08lX", (unsigned long)pet->dna.salt);
-    }
-
-    storage_derive_dna_stats(&pet->dna);
-
-    ESP_LOGI(TAG, "Pet loaded: %s Lv.%d (salt=0x%08lX, skills=%d, perks=%d)", 
-             pet->name, pet->level, (unsigned long)pet->dna.salt, pet->skill_count, pet->perk_count);
 
     return true;
 }
@@ -613,71 +273,15 @@ bool storage_load_tables(uint32_t *exp_table, uint16_t *hp_bonus)
     return true;
 }
 
-static char *g_professions_json = NULL;
-static char *g_enemies_json = NULL;
-static char *g_config_json = NULL;
-
-static char* load_json_file(const char *path)
-{
-    spi_bus_lock();
-    FILE *f = fopen(path, "r");
-    if (!f) {
-        spi_bus_unlock();
-        return NULL;
-    }
-
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    char *buffer = malloc(size + 1);
-    if (!buffer) {
-        fclose(f);
-        spi_bus_unlock();
-        return NULL;
-    }
-
-    size_t read_size = fread(buffer, 1, size, f);
-    buffer[read_size] = '\0';
-    fclose(f);
-    spi_bus_unlock();
-
-    return buffer;
-}
-
 bool storage_load_game_tables(void)
 {
-    if (g_professions_json && g_enemies_json && g_config_json) {
-        return true;
-    }
-
-    if (!g_professions_json) {
-        g_professions_json = load_json_file(MOUNT_POINT "/DATA/TABLES/professions.json");
-        if (g_professions_json) {
-            ESP_LOGI(TAG, "Professions loaded");
-        }
-    }
-
-    if (!g_enemies_json) {
-        g_enemies_json = load_json_file(MOUNT_POINT "/DATA/TABLES/enemies.json");
-        if (g_enemies_json) {
-            ESP_LOGI(TAG, "Enemies loaded");
-        }
-    }
-
-    if (!g_config_json) {
-        g_config_json = load_json_file(MOUNT_POINT "/DATA/TABLES/config.json");
-        if (g_config_json) {
-            ESP_LOGI(TAG, "Config loaded");
-        }
-    }
-
-    return (g_professions_json != NULL);
+    return storage_file_exists(MOUNT_POINT "/DATA/TABLES/professions.bin");
 }
 
 bool storage_apply_profession_data(pet_t *pet, uint8_t profession_id)
 {
-    if (!storage_load_game_tables() || !g_professions_json) {
+    FILE *f = fopen(MOUNT_POINT "/DATA/TABLES/professions.bin", "rb");
+    if (!f) {
         pet->rest.hp_rest_threshold = 60;
         pet->rest.recovery_chance = 75;
         pet->combat.base_ac = 12;
@@ -691,67 +295,33 @@ bool storage_apply_profession_data(pet_t *pet, uint8_t profession_id)
         return false;
     }
 
-    cJSON *root = cJSON_Parse(g_professions_json);
-    if (!root) {
-        ESP_LOGE(TAG, "Failed to parse professions.json");
-        return false;
-    }
-
-    cJSON *professions = cJSON_GetObjectItem(root, "professions");
-    if (!professions) {
-        cJSON_Delete(root);
-        return false;
-    }
-
-    cJSON *prof = NULL;
-    cJSON_ArrayForEach(prof, professions) {
-        cJSON *id_item = cJSON_GetObjectItem(prof, "id");
-        if (id_item && id_item->valueint == profession_id) {
-            cJSON *threshold = cJSON_GetObjectItem(prof, "hp_rest_threshold");
-            cJSON *chance = cJSON_GetObjectItem(prof, "recovery_chance");
-
-            if (threshold) pet->rest.hp_rest_threshold = threshold->valueint;
-            else pet->rest.hp_rest_threshold = 60;
-
-            if (chance) pet->rest.recovery_chance = chance->valueint;
-            else pet->rest.recovery_chance = 75;
-
-            cJSON *base_ac = cJSON_GetObjectItem(prof, "base_ac");
-            cJSON *damage_dice = cJSON_GetObjectItem(prof, "damage_dice");
-            cJSON *damage_bonus = cJSON_GetObjectItem(prof, "damage_bonus");
-            cJSON *dice_count = cJSON_GetObjectItem(prof, "dice_count");
-            cJSON *base_hp = cJSON_GetObjectItem(prof, "base_hp");
-            cJSON *base_energy = cJSON_GetObjectItem(prof, "base_energy");
-
-            if (base_ac) pet->combat.base_ac = base_ac->valueint;
-            else pet->combat.base_ac = 12;
-
-            if (damage_dice) pet->combat.damage_dice = damage_dice->valueint;
-            else pet->combat.damage_dice = 15;
-
-            if (damage_bonus) pet->combat.damage_bonus = damage_bonus->valueint;
-            else pet->combat.damage_bonus = 1;
-
-            if (dice_count) pet->combat.dice_count = dice_count->valueint;
-            else pet->combat.dice_count = 1;
-
-            if (base_hp) pet->hp_max = base_hp->valueint;
-            else pet->hp_max = 20;
+    profession_record_t prof;
+    bool found = false;
+    while (fread(&prof, sizeof(profession_record_t), 1, f) == 1) {
+        if (prof.id == profession_id) {
+            pet->rest.hp_rest_threshold = prof.hp_rest_threshold;
+            pet->rest.recovery_chance = prof.recovery_chance;
+            pet->combat.base_ac = prof.base_ac;
+            pet->combat.damage_dice = prof.damage_dice;
+            pet->combat.damage_bonus = prof.damage_bonus;
+            pet->combat.dice_count = prof.dice_count;
+            pet->hp_max = prof.base_hp;
             pet->hp = pet->hp_max;
-
-            if (base_energy) pet->energy_max = base_energy->valueint;
-            else pet->energy_max = 10;
+            pet->energy_max = prof.base_energy;
             pet->energy = pet->energy_max;
-
-            cJSON_Delete(root);
-            ESP_LOGI(TAG, "Applied profession %d: HP=%d, EN=%d, AC=%d, dmg=%dd%d+%d",
-                     profession_id, pet->hp_max, pet->energy_max,
-                     pet->combat.base_ac, pet->combat.dice_count, pet->combat.damage_dice, pet->combat.damage_bonus);
-            return true;
+            found = true;
+            break;
         }
     }
+    fclose(f);
 
-    cJSON_Delete(root);
+    if (found) {
+        ESP_LOGI(TAG, "Applied profession %d: HP=%d, EN=%d, AC=%d, dmg=%dd%d+%d",
+                 profession_id, pet->hp_max, pet->energy_max,
+                 pet->combat.base_ac, pet->combat.dice_count, pet->combat.damage_dice, pet->combat.damage_bonus);
+        return true;
+    }
+
     pet->rest.hp_rest_threshold = 60;
     pet->rest.recovery_chance = 75;
     pet->combat.base_ac = 12;
@@ -772,142 +342,88 @@ bool storage_get_enemy_data(uint8_t enemy_id, uint8_t pet_level, enemy_t *enemy)
         return false;
     }
 
-    if (!storage_load_game_tables() || !g_enemies_json) {
-        ESP_LOGW(TAG, "storage_get_enemy_data: enemies.json not loaded");
+    FILE *f = fopen(MOUNT_POINT "/DATA/TABLES/enemies.bin", "rb");
+    if (!f) {
+        ESP_LOGW(TAG, "storage_get_enemy_data: enemies.bin not found");
         return false;
     }
 
-    cJSON *root = cJSON_Parse(g_enemies_json);
-    if (!root) {
-        ESP_LOGE(TAG, "storage_get_enemy_data: JSON parse failed");
-        return false;
-    }
+    enemy_record_t rec;
+    bool found = false;
+    while (fread(&rec, sizeof(enemy_record_t), 1, f) == 1) {
+        if (rec.id == enemy_id) {
+            strncpy(enemy->name, rec.name, ENEMY_NAME_MAX_LEN - 1);
+            enemy->name[ENEMY_NAME_MAX_LEN - 1] = '\0';
 
-    cJSON *enemies = cJSON_GetObjectItem(root, "enemies");
-    if (!enemies) {
-        ESP_LOGE(TAG, "storage_get_enemy_data: 'enemies' array not found");
-        cJSON_Delete(root);
-        return false;
-    }
+            enemy->hp_max = rec.base_hp + (pet_level * rec.hp_per_level);
+            enemy->hp = enemy->hp_max;
 
-    cJSON *enemy_data = NULL;
-    cJSON_ArrayForEach(enemy_data, enemies) {
-        cJSON *id_item = cJSON_GetObjectItem(enemy_data, "id");
-        if (id_item && id_item->valueint == enemy_id) {
-            cJSON *name = cJSON_GetObjectItem(enemy_data, "name");
-            cJSON *base_hp = cJSON_GetObjectItem(enemy_data, "base_hp");
-            cJSON *hp_per_level = cJSON_GetObjectItem(enemy_data, "hp_per_level");
-            cJSON *base_ac = cJSON_GetObjectItem(enemy_data, "base_ac");
-            cJSON *ac_per_level = cJSON_GetObjectItem(enemy_data, "ac_per_level");
-cJSON *damage_dice = cJSON_GetObjectItem(enemy_data, "damage_dice");
-cJSON *damage_bonus = cJSON_GetObjectItem(enemy_data, "damage_bonus");
-cJSON *damage_per_level = cJSON_GetObjectItem(enemy_data, "damage_per_level");
-cJSON *attack_bonus = cJSON_GetObjectItem(enemy_data, "attack_bonus");
-cJSON *exp_base = cJSON_GetObjectItem(enemy_data, "exp_base");
-cJSON *exp_per_level = cJSON_GetObjectItem(enemy_data, "exp_per_level");
+            enemy->ac = rec.base_ac + ((pet_level / 5) * rec.ac_per_level);
+            if (enemy->ac > 20) enemy->ac = 20;
 
-if (name) strncpy(enemy->name, name->valuestring, ENEMY_NAME_MAX_LEN - 1);
-else snprintf(enemy->name, ENEMY_NAME_MAX_LEN, "Enemy%d", enemy_id);
-enemy->name[ENEMY_NAME_MAX_LEN - 1] = '\0';
+            enemy->damage_dice = rec.damage_dice;
+            enemy->damage_bonus = rec.damage_bonus + ((pet_level / 5) * rec.damage_per_level);
+            enemy->attack_bonus = rec.attack_bonus;
 
-uint16_t hp_base = base_hp ? base_hp->valueint : 20;
-uint16_t hp_pl = hp_per_level ? hp_per_level->valueint : 10;
-enemy->hp_max = hp_base + (pet_level * hp_pl);
-enemy->hp = enemy->hp_max;
-
-uint8_t ac_base = base_ac ? base_ac->valueint : 10;
-uint8_t ac_pl = ac_per_level ? ac_per_level->valueint : 0;
-enemy->ac = ac_base + ((pet_level / 5) * ac_pl);
-if (enemy->ac > 20) enemy->ac = 20;
-
-enemy->damage_dice = damage_dice ? damage_dice->valueint : 6;
-enemy->damage_bonus = damage_bonus ? damage_bonus->valueint : 0;
-uint8_t dmg_pl = damage_per_level ? damage_per_level->valueint : 0;
-enemy->damage_bonus += (pet_level / 5) * dmg_pl;
-
-enemy->attack_bonus = attack_bonus ? attack_bonus->valueint : 0;
-
-uint16_t avg_damage = (enemy->damage_dice / 2) + 1 + enemy->damage_bonus;
-uint16_t exp_from_stats = (enemy->hp_max * enemy->ac * avg_damage) / 20;
-uint16_t exp_b = exp_base ? exp_base->valueint : 20;
-uint16_t exp_pl = exp_per_level ? exp_per_level->valueint : 5;
-enemy->exp_reward = exp_b + (pet_level * exp_pl) + exp_from_stats;
+            uint16_t avg_damage = (enemy->damage_dice / 2) + 1 + enemy->damage_bonus;
+            uint16_t exp_from_stats = (enemy->hp_max * enemy->ac * avg_damage) / 20;
+            enemy->exp_reward = rec.exp_base + (pet_level * rec.exp_per_level) + exp_from_stats;
 
             enemy->level = pet_level;
             enemy->alive = true;
-
-            cJSON_Delete(root);
-            ESP_LOGI(TAG, "Enemy %d loaded: %s HP=%d AC=%d dmg=%dd%d+%d exp=%d",
-                     enemy_id, enemy->name, enemy->hp_max, enemy->ac,
-                     1, enemy->damage_dice, enemy->damage_bonus, enemy->exp_reward);
-            return true;
+            found = true;
+            break;
         }
     }
+    fclose(f);
 
-    cJSON_Delete(root);
+    if (found) {
+        ESP_LOGI(TAG, "Enemy %d loaded: %s HP=%d AC=%d dmg=%dd%d+%d exp=%d",
+                 enemy_id, enemy->name, enemy->hp_max, enemy->ac,
+                 1, enemy->damage_dice, enemy->damage_bonus, enemy->exp_reward);
+        return true;
+    }
+
     return false;
 }
 
 uint8_t storage_get_random_enemy_id(uint8_t pet_level)
 {
-    if (!storage_load_game_tables() || !g_enemies_json) {
-        ESP_LOGW(TAG, "get_random_enemy: enemies.json not loaded");
-        return 0;
-    }
-
-    cJSON *root = cJSON_Parse(g_enemies_json);
-    if (!root) {
-        ESP_LOGE(TAG, "get_random_enemy: JSON parse failed");
-        return 0;
-    }
-
-    cJSON *tiers = cJSON_GetObjectItem(root, "enemy_tiers");
-    if (!tiers) {
-        ESP_LOGE(TAG, "get_random_enemy: 'enemy_tiers' not found");
-        cJSON_Delete(root);
+    FILE *f_tier = fopen(MOUNT_POINT "/DATA/TABLES/enemy_tiers.bin", "rb");
+    if (!f_tier) {
+        ESP_LOGW(TAG, "get_random_enemy: enemy_tiers.bin not found");
         return 0;
     }
 
     uint8_t valid_tier = 1;
-    cJSON *tier = NULL;
-    cJSON_ArrayForEach(tier, tiers) {
-        cJSON *min_lvl = cJSON_GetObjectItem(tier, "min_level");
-        cJSON *max_lvl = cJSON_GetObjectItem(tier, "max_level");
-        if (min_lvl && max_lvl) {
-            if (pet_level >= min_lvl->valueint && pet_level <= max_lvl->valueint) {
-                cJSON *tier_item = cJSON_GetObjectItem(tier, "tier");
-                if (tier_item) {
-                    valid_tier = tier_item->valueint;
-                }
-                break;
-            }
+    enemy_tier_record_t tier;
+    while (fread(&tier, sizeof(enemy_tier_record_t), 1, f_tier) == 1) {
+        if (pet_level >= tier.min_level && pet_level <= tier.max_level) {
+            valid_tier = tier.tier;
+            break;
         }
     }
+    fclose(f_tier);
 
     ESP_LOGI(TAG, "Pet level %d -> tier %d", pet_level, valid_tier);
 
-    cJSON *enemies = cJSON_GetObjectItem(root, "enemies");
-    if (!enemies) {
-        ESP_LOGE(TAG, "get_random_enemy: 'enemies' not found");
-        cJSON_Delete(root);
+    FILE *f_enemy = fopen(MOUNT_POINT "/DATA/TABLES/enemies.bin", "rb");
+    if (!f_enemy) {
+        ESP_LOGW(TAG, "get_random_enemy: enemies.bin not found");
         return 0;
     }
 
     uint8_t candidates[16];
     uint8_t count = 0;
-
-    cJSON *enemy_data = NULL;
-    cJSON_ArrayForEach(enemy_data, enemies) {
-        cJSON *tier_item = cJSON_GetObjectItem(enemy_data, "tier");
-        if (tier_item && tier_item->valueint == valid_tier) {
-            cJSON *id_item = cJSON_GetObjectItem(enemy_data, "id");
-            if (id_item && count < 16) {
-                candidates[count++] = id_item->valueint;
+    enemy_record_t rec;
+    while (fread(&rec, sizeof(enemy_record_t), 1, f_enemy) == 1) {
+        if (rec.tier == valid_tier) {
+            if (count < 16) {
+                candidates[count++] = rec.id;
             }
         }
     }
-
-    cJSON_Delete(root);
+    fclose(f_enemy);
 
     ESP_LOGI(TAG, "Found %d enemies for tier %d", count, valid_tier);
 
@@ -986,11 +502,10 @@ bool storage_load_dna_codes_only(dna_t *dna)
     }
 
     spi_bus_lock();
-
-    FILE *f = fopen(MOUNT_POINT "/DATA/DNA/pet_dna.json", "r");
+    FILE *f = fopen(MOUNT_POINT "/DATA/DNA/pet_dna.bin", "rb");
     if (!f) {
         spi_bus_unlock();
-        ESP_LOGW(TAG, "DNA file not found, using default codes");
+        ESP_LOGW(TAG, "DNA bin file not found, using default codes");
         const char *default_codes[DNA_STAT_COUNT] = {
             "A3fK9x", "B7mP2q", "C1nL8w", "D5hR4t", "E9kM6y", "F2jS7z"
         };
@@ -1001,31 +516,18 @@ bool storage_load_dna_codes_only(dna_t *dna)
         return false;
     }
 
-    char buf[256];
-    size_t len = fread(buf, 1, sizeof(buf) - 1, f);
-    buf[len] = '\0';
+    size_t read_bytes = fread(dna->codes, 1, sizeof(dna->codes), f);
     fclose(f);
-
     spi_bus_unlock();
 
-    cJSON *root = cJSON_Parse(buf);
-    if (!root) {
-        ESP_LOGE(TAG, "storage_load_dna_codes_only: JSON parse failed");
+    if (read_bytes != sizeof(dna->codes)) {
+        ESP_LOGE(TAG, "storage_load_dna_codes_only: size mismatch (%d != %d)", read_bytes, sizeof(dna->codes));
         return false;
     }
 
-    cJSON *item;
-    const char *stat_keys[] = {"str", "dex", "con", "int", "wis", "cha"};
-
     for (int i = 0; i < DNA_STAT_COUNT; i++) {
-        item = cJSON_GetObjectItem(root, stat_keys[i]);
-        if (item && item->valuestring) {
-            strncpy(dna->codes[i], item->valuestring, DNA_CODE_LEN - 1);
-            dna->codes[i][DNA_CODE_LEN - 1] = '\0';
-        }
+        dna->codes[i][DNA_CODE_LEN - 1] = '\0';
     }
-
-    cJSON_Delete(root);
 
     ESP_LOGI(TAG, "DNA codes loaded: %s %s %s %s %s %s",
              dna->codes[0], dna->codes[1], dna->codes[2],
@@ -1053,19 +555,7 @@ void storage_derive_dna_stats(dna_t *dna)
              dna->base_stats[3], dna->base_stats[4], dna->base_stats[5]);
 }
 
-const char* storage_get_professions_json(void)
-{
-    return g_professions_json;
-}
 
-const char* storage_get_game_tables_json(void)
-{
-    static char *g_game_tables_json = NULL;
-    if (!g_game_tables_json) {
-        g_game_tables_json = load_json_file(MOUNT_POINT "/DATA/game_tables.json");
-    }
-    return g_game_tables_json;
-}
 
 static void replay_build_paths(void)
 {

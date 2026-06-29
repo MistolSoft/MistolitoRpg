@@ -9,7 +9,7 @@
 static const char *TAG = "USB_INIT";
 
 static const char *REQUIRED_FILES[] = {
-    "/DATA/game_tables.json",
+    "/DATA/TABLES/professions.bin",
     NULL
 };
 
@@ -198,7 +198,7 @@ static esp_err_t handle_init_complete(const char *params, char *response, size_t
 static esp_err_t handle_list_files(const char *params, char *response, size_t resp_len)
 {
     (void)params;
-    snprintf(response, resp_len, "FILES:game_tables.json");
+    snprintf(response, resp_len, "FILES:professions.bin");
     return ESP_OK;
 }
 
@@ -208,9 +208,9 @@ static esp_err_t handle_wipe(const char *params, char *response, size_t resp_len
     ESP_LOGI(TAG, "Wiping all data...");
 
     char path[128];
-    snprintf(path, sizeof(path), "%s/DATA/game_tables.json", MOUNT_POINT);
+    snprintf(path, sizeof(path), "%s/DATA/TABLES/professions.bin", MOUNT_POINT);
     storage_delete_file(path);
-    snprintf(path, sizeof(path), "%s/BRAIN/PET/pet_data.json", MOUNT_POINT);
+    snprintf(path, sizeof(path), "%s/BRAIN/PET/pet_data.bin", MOUNT_POINT);
     storage_delete_file(path);
 
     snprintf(response, resp_len, "WIPE_COMPLETE");

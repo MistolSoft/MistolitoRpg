@@ -1,9 +1,16 @@
 import csv
 import random
+import os
+import sys
 
-from tools.generate_dataset import decide_action
+TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if TOOLS_DIR not in sys.path:
+    sys.path.append(TOOLS_DIR)
 
-INPUT_FILE = "data/datasets/combat_validation_onnx_results.csv"
+from heuristics import decide_action
+
+PROJECT_DIR = os.path.dirname(TOOLS_DIR)
+INPUT_FILE = os.path.join(PROJECT_DIR, "data", "datasets", "combat_validation_onnx_results.csv")
 ACTIONS = ["ATACAR", "DEFENDER", "HUIR"]
 
 print("Cargando resultados...")
@@ -16,16 +23,16 @@ conf_matrix = {a: {b: 0 for b in ACTIONS} for a in ACTIONS}
 disagreements = []
 
 for r in rows:
-    pet_hp = int(round(float(r["pet_hp"]) * 100))
-    pet_en = int(round(float(r["pet_energy"]) * 100))
-    pet_atk = int(round(float(r["pet_attack"]) * 20))
-    pet_def = int(round(float(r["pet_defense"]) * 20))
-    en_hp = int(round(float(r["enemy_hp"]) * 100))
-    en_en = int(round(float(r["enemy_energy"]) * 100))
-    en_atk = int(round(float(r["enemy_attack"]) * 20))
-    en_def = int(round(float(r["enemy_defense"]) * 20))
-
-    expected = decide_action(pet_hp, pet_en, pet_atk, pet_def, en_hp, en_en, en_atk, en_def)
+    expected = decide_action(
+        hit_prob=float(r["s2"]),
+        defense_prob=float(r["s3"]),
+        pet_hp_ratio=float(r["s0"]),
+        enemy_hp_ratio=float(r["s4"]),
+        threat_level=float(r["s7"]),
+        dmg_efficiency=float(r["s6"]),
+        quality_score=float(r["s8"]),
+        last_action=0
+    )
     predicted = int(r["pred_action"])
 
     conf_matrix[ACTIONS[expected]][ACTIONS[predicted]] += 1
@@ -37,13 +44,13 @@ for r in rows:
             "expected": ACTIONS[expected],
             "predicted": ACTIONS[predicted],
             "confidence": r["confidence"],
-            "pet_hp": r["pet_hp"],
-            "pet_en": r["pet_energy"],
-            "pet_atk": r["pet_attack"],
-            "pet_def": r["pet_defense"],
-            "en_hp": r["enemy_hp"],
-            "en_atk": r["enemy_attack"],
-            "en_def": r["enemy_defense"],
+            "s0": r["s0"],
+            "s1": r["s1"],
+            "s2": r["s2"],
+            "s3": r["s3"],
+            "s4": r["s4"],
+            "s6": r["s6"],
+            "s7": r["s7"],
             "atk_adv": r["atk_adv"],
             "def_disadv": r["def_disadv"],
         })
@@ -70,23 +77,23 @@ print("=== Exactitud por accion esperada ===")
 for a in ACTIONS:
     tot = sum(conf_matrix[a].values())
     ok = conf_matrix[a][a]
-    print(f"  {a:>10}: {ok:4d}/{tot:4d} ({ok/tot*100:.1f}%%)")
+    print(f"  {a:>10}: {ok:4d}/{tot:4d} ({ok/tot*100:.1f}%)")
 print()
 
 print("=== Confianza promedio por acierto/desacierto ===")
 conf_correct = []
 conf_wrong = []
 for r in rows:
-    pet_hp = int(round(float(r["pet_hp"]) * 100))
-    pet_en = int(round(float(r["pet_energy"]) * 100))
-    pet_atk = int(round(float(r["pet_attack"]) * 20))
-    pet_def = int(round(float(r["pet_defense"]) * 20))
-    en_hp = int(round(float(r["enemy_hp"]) * 100))
-    en_en = int(round(float(r["enemy_energy"]) * 100))
-    en_atk = int(round(float(r["enemy_attack"]) * 20))
-    en_def = int(round(float(r["enemy_defense"]) * 20))
-
-    expected = decide_action(pet_hp, pet_en, pet_atk, pet_def, en_hp, en_en, en_atk, en_def)
+    expected = decide_action(
+        hit_prob=float(r["s2"]),
+        defense_prob=float(r["s3"]),
+        pet_hp_ratio=float(r["s0"]),
+        enemy_hp_ratio=float(r["s4"]),
+        threat_level=float(r["s7"]),
+        dmg_efficiency=float(r["s6"]),
+        quality_score=float(r["s8"]),
+        last_action=0
+    )
     predicted = int(r["pred_action"])
     c = float(r["confidence"])
     if expected == predicted:
@@ -104,6 +111,6 @@ disagreements.sort(key=lambda x: -float(x["confidence"]))
 for d in disagreements[:10]:
     print(f"  esperado={d['expected']} predicho={d['predicted']} "
           f"(conf={d['confidence']}) | "
-          f"pet(hp={d['pet_hp']} en={d['pet_en']} atk={d['pet_atk']} def={d['pet_def']}) | "
-          f"enemy(hp={d['en_hp']} atk={d['en_atk']} def={d['en_def']}) | "
+          f"pet(hp={d['s0']} en={d['s1']} atk={d['s2']} def={d['s3']}) | "
+          f"enemy(hp={d['s4']} atk={d['s6']} def={d['s7']}) | "
           f"atk_adv={d['atk_adv']} def_disadv={d['def_disadv']}")

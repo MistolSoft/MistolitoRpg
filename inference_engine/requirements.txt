@@ -4,3 +4,4 @@ pandas
 scikit-learn
 tf2onnx
 onnxruntime
+torch

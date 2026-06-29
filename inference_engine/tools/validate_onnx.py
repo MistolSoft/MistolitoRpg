@@ -1,23 +1,30 @@
 import numpy as np
 import pandas as pd
 import onnxruntime as ort
+import os
 
-MODEL_FILE = "models/combat_ai.onnx"
-INPUT_FILE = "data/datasets/combat_validation_inputs.csv"
-OUTPUT_FILE = "data/datasets/combat_validation_onnx_results.csv"
+TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(TOOLS_DIR)
+MODEL_FILE = os.path.join(PROJECT_DIR, "models", "combat_ai.onnx")
+INPUT_FILE = os.path.join(PROJECT_DIR, "data", "datasets", "combat_validation_inputs.csv")
+OUTPUT_FILE = os.path.join(PROJECT_DIR, "data", "datasets", "combat_validation_onnx_results.csv")
 
 ACTIONS = ["ATACAR", "DEFENDER", "HUIR"]
 
 print("Cargando modelo ONNX...")
 sess = ort.InferenceSession(MODEL_FILE)
 input_name = sess.get_inputs()[0].name
+expected_input_shape = sess.get_inputs()[0].shape
 
 print("Cargando inputs de validacion...")
 df = pd.read_csv(INPUT_FILE)
 X = df.values.astype(np.float32)
 
-print(f"Ejecutando inferencia en {len(X)} muestras...")
-preds = sess.run(None, {input_name: X})[0]
+num_features = expected_input_shape[1]
+X_input = X[:, :num_features]
+
+print(f"Ejecutando inferencia en {len(X_input)} muestras con {num_features} features...")
+preds = sess.run(None, {input_name: X_input})[0]
 pred_classes = np.argmax(preds, axis=1)
 confidences = np.max(preds, axis=1)
 
@@ -45,7 +52,7 @@ for label in ACTIONS:
 print(f"\n=== 10 muestras al azar ===")
 samples = df.sample(10, random_state=42)
 for _, row in samples.iterrows():
-    print(f"  hp={row['pet_hp']:.2f} en={row['pet_energy']:.2f} atk={row['pet_attack']:.2f} def={row['pet_defense']:.2f} | "
-          f"enemy(hp={row['enemy_hp']:.2f} atk={row['enemy_attack']:.2f} def={row['enemy_defense']:.2f}) | "
+    print(f"  hp={row['s0']:.2f} en={row['s1']:.2f} atk={row['s2']:.2f} def={row['s3']:.2f} | "
+          f"enemy(hp={row['s4']:.2f} atk={row['s6']:.2f} def={row['s7']:.2f}) | "
           f"atk_adv={row['atk_adv']:.2f} def_disadv={row['def_disadv']:.2f} | "
           f"-> {row['pred_label']} (conf={row['confidence']:.2f})")

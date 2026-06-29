@@ -46,7 +46,7 @@ Este documento define las fases de desarrollo y el estado actual del proyecto.
 | Documento | Prioridad | Descripción |
 |-----------|-----------|-------------|
 | API_Bridge_Spec.md | ALTA | Endpoints, payloads JSON, auth, rate limits, errores |
-| Formatos_Archivo_SD.md | ALTA | Estructura de config.json, v.bin, index.bin, .json |
+| Formatos_Archivo_SD.md | COMPLETED | Estructura de /DATA/TABLES/*.bin, empaquetado y compilation flow |
 | Protocolo_Embeddings.md | ALTA | Dimensiones del vector, serialización hex, threshold |
 | Estructura_Block_Genome.md | ALTA | CBOR + Deflate + AES-256-GCM + Base64 exacto |
 | Formato_Sprites.md | ALTA | Formato, resolución, paleta, frames de animación |

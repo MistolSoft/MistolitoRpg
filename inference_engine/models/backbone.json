@@ -16,8 +16,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 202160413,
-                "dominator": 202160413
+                "hash": 387573154,
+                "dominator": 387573154
             },
             "fc1.weight": {
                 "bit_width": 8,
@@ -34,8 +34,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 1753425772,
-                "dominator": 1753425772
+                "hash": 1287517661,
+                "dominator": 1287517661
             },
             "fc1.bias": {
                 "bit_width": 20,
@@ -52,8 +52,8 @@
                 "state": "PASSIVE",
                 "quant_min": -524288,
                 "quant_max": 524287,
-                "hash": 324655231,
-                "dominator": 324655231
+                "hash": 1892839724,
+                "dominator": 1892839724
             },
             "relu": {
                 "bit_width": 8,
@@ -70,8 +70,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 2548718064,
-                "dominator": 2548718064
+                "hash": 1587018673,
+                "dominator": 1587018673
             }
         },
         "node_linear_1": {
@@ -90,8 +90,8 @@
                 "state": "OVERLAPPED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 2249937139,
-                "dominator": 2548718064
+                "hash": 910995376,
+                "dominator": 1587018673
             },
             "fc2.weight": {
                 "bit_width": 8,
@@ -108,8 +108,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 2720937962,
-                "dominator": 2720937962
+                "hash": 3405467571,
+                "dominator": 3405467571
             },
             "fc2.bias": {
                 "bit_width": 20,
@@ -126,8 +126,8 @@
                 "state": "PASSIVE",
                 "quant_min": -524288,
                 "quant_max": 524287,
-                "hash": 137633541,
-                "dominator": 137633541
+                "hash": 1333345194,
+                "dominator": 1333345194
             },
             "features": {
                 "bit_width": 8,
@@ -144,8 +144,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 2142499278,
-                "dominator": 2142499278
+                "hash": 3057535079,
+                "dominator": 3057535079
             }
         }
     },
@@ -154,32 +154,32 @@
         "node_linear_1": "ESPDL_S3_INT8"
     },
     "values": {
-        "202160413": {
-            "scale": 0.5,
-            "zero_point": 0.0
-        },
-        "1753425772": {
-            "scale": 0.03125,
-            "zero_point": 0.0
-        },
-        "324655231": {
-            "scale": 0.015625,
-            "zero_point": 0.0
-        },
-        "2548718064": {
+        "387573154": {
             "scale": 0.25,
             "zero_point": 0.0
         },
-        "2720937962": {
+        "1287517661": {
             "scale": 0.03125,
             "zero_point": 0.0
         },
-        "137633541": {
+        "1892839724": {
             "scale": 0.0078125,
             "zero_point": 0.0
         },
-        "2142499278": {
-            "scale": 0.25,
+        "1587018673": {
+            "scale": 0.0625,
+            "zero_point": 0.0
+        },
+        "3405467571": {
+            "scale": 0.015625,
+            "zero_point": 0.0
+        },
+        "1333345194": {
+            "scale": 0.0009765625,
+            "zero_point": 0.0
+        },
+        "3057535079": {
+            "scale": 0.0625,
             "zero_point": 0.0
         }
     }

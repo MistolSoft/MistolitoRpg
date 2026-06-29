@@ -5,9 +5,11 @@ pandas
 scikit-learn
 tf2onnx
 onnxruntime
+torch
 
 # Dependencias de Scripts del proyecto (conversión de imágenes, comunicación, etc.)
 lz4
 pypng
 requests
 cbor2
+esp-ppq

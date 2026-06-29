@@ -15,10 +15,10 @@
 #define STORAGE_OP_REPLAY_READ   5
 #define STORAGE_OP_REPLAY_INIT   6
 
-#define REPLAY_MAGIC            0x52504C59  /* "RPLY" */
+#define REPLAY_MAGIC            0x52504C59
 #define REPLAY_VERSION          1
 #define REPLAY_TRANSITIONS_PER_CHUNK  10000
-#define REPLAY_TRANSITION_SIZE  78  /* 36+1+4+36+1 = 9+1+4+9+1 floats */
+#define REPLAY_TRANSITION_SIZE  78
 
 #define COMBAT_DIR MOUNT_POINT "/BRAIN/COMBAT"
 #define REPLAY_BASE_DIR COMBAT_DIR "/replay"
@@ -94,8 +94,6 @@ esp_err_t storage_save_file(const char *path, const uint8_t *data, size_t len);
 esp_err_t storage_delete_file(const char *path);
 bool storage_load_dna_codes_only(dna_t *dna);
 void storage_derive_dna_stats(dna_t *dna);
-const char* storage_get_professions_json(void);
-const char* storage_get_game_tables_json(void);
 
 void storage_replay_init(void);
 void storage_replay_set_action_count(uint8_t num_actions);

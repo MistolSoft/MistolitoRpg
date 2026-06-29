@@ -1,3 +1,6 @@
+#include "cJSON.h"
+#include "game_tables_structs.h"
+
 #include "game_coordinator.h"
 #include "combat_engine.h"
 #include "rest_engine.h"
@@ -70,6 +73,49 @@ TaskHandle_t g_coordinator_task_handle = NULL;
 static float exp_base = 50.0f;
 static float exp_linear = 50.0f;
 static float exp_multiplier = 1.15f;
+
+typedef struct {
+    uint32_t max_level;
+    uint32_t transitions_per_level;
+} transition_interval_t;
+
+static transition_interval_t s_intervals[10];
+static int s_intervals_count = 0;
+
+static void load_transition_intervals(void)
+{
+    FILE *f = fopen(MOUNT_POINT "/DATA/TABLES/transition_intervals.bin", "rb");
+    if (!f) {
+        ESP_LOGW(TAG, "transition_intervals.bin not found");
+        return;
+    }
+
+    s_intervals_count = 0;
+    while (s_intervals_count < 10 && fread(&s_intervals[s_intervals_count], sizeof(transition_interval_t), 1, f) == 1) {
+        s_intervals_count++;
+    }
+    fclose(f);
+}
+
+static bool check_level_up_trigger(uint8_t current_level, uint32_t total_trans)
+{
+    uint32_t transitions_per_level = 500;
+    if (s_intervals_count > 0) {
+        for (int i = 0; i < s_intervals_count; i++) {
+            if (current_level <= s_intervals[i].max_level) {
+                transitions_per_level = s_intervals[i].transitions_per_level;
+                break;
+            }
+        }
+    }
+
+    if (transitions_per_level == 0) {
+        return false;
+    }
+
+    uint32_t calculated_level = total_trans / transitions_per_level;
+    return (calculated_level >= current_level);
+}
 
 static uint32_t calc_exp_for_level(uint8_t level)
 {
@@ -636,31 +682,15 @@ experience_logger_end_episode(g_combat_result.victory, g_snapshot.encounter.enem
 
 if (g_combat_result.victory) {
     uint32_t total_trans = storage_replay_get_total();
-    uint32_t threshold = (uint32_t)g_snapshot.pet.level * 500;
-    uint32_t retry_buffer = 50;
 
-    if (total_trans >= threshold) {
-        static uint32_t s_last_attempt_trans = 0;
-        static uint8_t s_last_attempt_level = 0;
-
-        if (s_last_attempt_level == g_snapshot.pet.level && total_trans < s_last_attempt_trans + retry_buffer) {
-            if (rest_should_rest(g_snapshot.pet.hp, g_snapshot.pet.hp_max, g_snapshot.pet.rest.hp_rest_threshold)) {
-                rest_init(&g_snapshot.rest, &g_snapshot.pet);
-                transition_to(GS_RESTING);
-            } else {
-                transition_to(GS_VICTORY);
-            }
-        } else {
-            s_last_attempt_level = g_snapshot.pet.level;
-            s_last_attempt_trans = total_trans;
-            transition_to(GS_TRAINING);
-        }
+    if (check_level_up_trigger(g_snapshot.pet.level, total_trans)) {
+        transition_to(GS_TRAINING);
     } else if (rest_should_rest(g_snapshot.pet.hp, g_snapshot.pet.hp_max, g_snapshot.pet.rest.hp_rest_threshold)) {
-rest_init(&g_snapshot.rest, &g_snapshot.pet);
-transition_to(GS_RESTING);
-} else {
-transition_to(GS_VICTORY);
-}
+        rest_init(&g_snapshot.rest, &g_snapshot.pet);
+        transition_to(GS_RESTING);
+    } else {
+        transition_to(GS_VICTORY);
+    }
 } else {
 transition_to(GS_DEAD);
 }
@@ -673,6 +703,8 @@ void game_coordinator_task(void *arg)
     while (!g_initialized) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+
+    load_transition_intervals();
 
     while (1) {
         switch (g_snapshot.state) {

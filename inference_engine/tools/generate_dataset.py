@@ -4,8 +4,19 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
+import sys
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if TOOLS_DIR not in sys.path:
+    sys.path.append(TOOLS_DIR)
+
+from heuristics import (
+    calc_hit_prob,
+    calc_defense_prob,
+    calc_avg_pet_damage,
+    calc_avg_enemy_damage,
+    decide_action
+)
 PROJECT_DIR = os.path.dirname(TOOLS_DIR)
 DATASET_DIR = os.path.join(PROJECT_DIR, "data", "datasets")
 MODEL_DIR = os.path.join(PROJECT_DIR, "models")
@@ -144,75 +155,6 @@ def d20():
     return random.randint(1, 20)
 
 
-def calc_hit_prob(target_ac, attack_bonus):
-    roll_needed = target_ac - attack_bonus
-    if roll_needed < 2:
-        roll_needed = 2
-    if roll_needed > 20:
-        roll_needed = 20
-    return (21.0 - float(roll_needed)) / 20.0
-
-
-def calc_defense_prob(pet_ac, enemy_attack):
-    roll_needed = pet_ac - enemy_attack
-    if roll_needed < 2:
-        roll_needed = 2
-    if roll_needed > 20:
-        roll_needed = 20
-    return (21.0 - float(roll_needed)) / 20.0
-
-
-def calc_avg_pet_damage(dice_count, dice_size, str_mod, min_damage):
-    avg_roll = (dice_size + 1) / 2.0
-    return max(1.0, dice_count * avg_roll + str_mod + min_damage)
-
-
-def calc_avg_enemy_damage(dice_size, damage_bonus):
-    avg_roll = (dice_size + 1) / 2.0
-    return max(1.0, avg_roll + damage_bonus)
-
-
-def decide_action(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio, threat_level, dmg_efficiency, quality_score, last_action):
-    if pet_hp_ratio < 0.15:
-        return 2
-    if pet_hp_ratio < 0.3 and enemy_hp_ratio > 2.0:
-        return 2
-
-    if quality_score < -0.3:
-        if last_action == 0:
-            if threat_level > 0.5:
-                return 1
-            elif pet_hp_ratio < 0.3:
-                return 2
-        elif last_action == 1:
-            if hit_prob > 0.5:
-                return 0
-        elif last_action == 2:
-            if hit_prob > 0.4:
-                return 0
-
-    if quality_score > 0.3:
-        if last_action == 0:
-            return 0
-        elif last_action == 1:
-            if hit_prob > 0.6:
-                return 0
-
-    if hit_prob > 0.65 and threat_level < 0.4 and dmg_efficiency > 0.3:
-        return 0
-    if hit_prob > 0.5 and pet_hp_ratio > 0.6 and enemy_hp_ratio < 1.0:
-        return 0
-    if hit_prob > 0.45 and pet_hp_ratio > 0.5 and threat_level < 0.5:
-        return 0
-
-    if threat_level > 0.6 and pet_hp_ratio < 0.4:
-        return 1
-    if enemy_hp_ratio > 1.8 and pet_hp_ratio < 0.5:
-        return 1
-    if defense_prob > 0.5 and pet_hp_ratio < 0.6:
-        return 1
-
-    return 0
 
 
 def gen_scenario(type_name):
@@ -300,6 +242,34 @@ def gen_scenario(type_name):
         enemy_damage_dice = random.choice([8, 10])
         enemy_damage_bonus = random.randint(2, 5)
 
+    elif type_name == "tank_vs_tank":
+        pet_hp_max = random.randint(40, 60)
+        pet_hp = random.randint(int(pet_hp_max * 0.6), pet_hp_max)
+        pet_dex_mod = random.randint(0, 2)
+        pet_str_mod = random.randint(0, 2)
+        pet_dice_count = 2
+        pet_dice_size = 4
+        enemy_hp_max = random.randint(40, 60)
+        enemy_hp = random.randint(int(enemy_hp_max * 0.6), enemy_hp_max)
+        enemy_attack = random.randint(2, 5)
+        enemy_ac = random.randint(13, 16)
+        enemy_damage_dice = random.choice([4])
+        enemy_damage_bonus = random.randint(0, 2)
+        
+    elif type_name == "high_evasion":
+        pet_hp_max = random.randint(30, 50)
+        pet_hp = random.randint(int(pet_hp_max * 0.5), pet_hp_max)
+        pet_dex_mod = random.randint(1, 3)
+        pet_str_mod = random.randint(1, 3)
+        pet_dice_count = 2
+        pet_dice_size = 6
+        enemy_hp_max = random.randint(15, 25)
+        enemy_hp = enemy_hp_max
+        enemy_attack = random.randint(3, 6)
+        enemy_ac = random.randint(15, 18)
+        enemy_damage_dice = 6
+        enemy_damage_bonus = random.randint(1, 3)
+
     else:
         pet_hp_max = random.randint(40, 80)
         pet_hp = random.randint(int(pet_hp_max * 0.4), pet_hp_max)
@@ -339,6 +309,8 @@ SCENARIOS = [
     "slight_disadvantage",
     "desperate",
     "glass_cannon",
+    "tank_vs_tank",
+    "high_evasion",
 ]
 
 
@@ -360,7 +332,8 @@ def calc_reward(action, pet_hp, pet_hp_max, pet_hp_before,
             reward += REWARD_FLEE_PENALTY
     if action == 1 and not fled and not pet_died:
         pet_hp_ratio = pet_hp_before / pet_hp_max if pet_hp_max > 0 else 0
-        reward += REWARD_DEFEND_BONUS * pet_hp_ratio
+        # Reduce the defense bonus to avoid infinite defend hacking
+        reward += (REWARD_DEFEND_BONUS * pet_hp_ratio * 0.5)
     enemy_hp_ratio_before = enemy_hp_before / enemy_hp_max if enemy_hp_max > 0 else 0
     enemy_hp_ratio_after = enemy_hp / enemy_hp_max if enemy_hp_max > 0 else 0
     if enemy_hp_ratio_before > 0.5 and enemy_hp_ratio_after < 0.25:
@@ -485,6 +458,9 @@ def simulate_episode(critic):
     combat_history = []
     quality_score = 0.0
     last_action = 0
+    
+    profile = random.choice(["balanced", "aggressive", "cautious"])
+    epsilon = 0.15
 
     for turn in range(random.randint(2, 8)):
         if pet_hp <= 0 or enemy_hp <= 0:
@@ -495,7 +471,10 @@ def simulate_episode(critic):
         dmg_eff = avg_pet_dmg / enemy_hp if enemy_hp > 0 else 1.0
         threat = avg_enemy_dmg / pet_hp if pet_hp > 0 else 1.0
 
-        action = decide_action(hit_prob, defense_prob, my_hp_ratio, enemy_hp_ratio_val, threat, dmg_eff, quality_score, last_action)
+        if random.random() < epsilon:
+            action = random.choice([0, 1, 2])
+        else:
+            action = decide_action(hit_prob, defense_prob, my_hp_ratio, enemy_hp_ratio_val, threat, dmg_eff, quality_score, last_action, profile=profile)
 
         state = make_state(pet_hp, pet_hp_max, pet_energy, pet_energy_max,
                            pet_dex_mod, pet_ac, pet_str_mod, pet_min_damage,

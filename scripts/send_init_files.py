@@ -277,6 +277,7 @@ def main():
     parser.add_argument('--baud', type=int, default=BAUDRATE, help='Baud rate')
     parser.add_argument('--wipe', action='store_true', help='Wipe device and reboot')
     parser.add_argument('--no-wipe', action='store_true', help='Skip SD card wipe')
+    parser.add_argument('--keep-pet', action='store_true', help='Skip deleting pet_data.json to preserve progress')
     parser.add_argument('--status', action='store_true', help='Check device status only')
     parser.add_argument('--dump-replay', action='store_true', help='Dump replay data from device to CSV')
     parser.add_argument('--export', default=None, help='CSV output path for --dump-replay')
@@ -308,29 +309,43 @@ def main():
             init.wipe()
             print()
 
-        tables_dir = args.tables_dir
-        if not os.path.isabs(tables_dir):
-            tables_dir = os.path.join(project_root, tables_dir)
+        print("\n--- Compiling tables to binary ---")
+        import subprocess
+        compile_script = os.path.join(script_dir, "compile_tables.py")
+        subprocess.check_call([sys.executable, compile_script])
 
-        game_tables_file = os.path.join(tables_dir, 'game_tables.json')
-        if os.path.exists(game_tables_file):
-            if not init.send_file(game_tables_file, "/DATA/game_tables.json"):
-                print("Failed to send game_tables.json")
-                return
-        else:
-            print("Warning: game_tables.json not found")
+        binary_dir = os.path.join(project_root, "firmware", "data", "binary")
+        binary_files = [
+            ("config.bin", "/DATA/TABLES/config.bin"),
+            ("professions.bin", "/DATA/TABLES/professions.bin"),
+            ("enemies.bin", "/DATA/TABLES/enemies.bin"),
+            ("enemy_tiers.bin", "/DATA/TABLES/enemy_tiers.bin"),
+            ("transition_intervals.bin", "/DATA/TABLES/transition_intervals.bin"),
+            ("skills.bin", "/DATA/TABLES/skills.bin"),
+            ("perks.bin", "/DATA/TABLES/perks.bin"),
+            ("spells.bin", "/DATA/TABLES/spells.bin"),
+            ("features.bin", "/DATA/TABLES/features.bin"),
+            ("resources.bin", "/DATA/TABLES/resources.bin"),
+            ("damage_progression.bin", "/DATA/TABLES/damage_progression.bin"),
+        ]
+        
+        print("\n--- Sending binary tables ---")
+        for filename, remote_path in binary_files:
+            local_path = os.path.join(binary_dir, filename)
+            if os.path.exists(local_path):
+                if not init.send_file(local_path, remote_path):
+                    print(f"Failed to send {filename}")
+                    return
+            else:
+                print(f"Warning: {filename} not found at {local_path}")
 
-        dna_dir = args.dna_dir
-        if not os.path.isabs(dna_dir):
-            dna_dir = os.path.join(project_root, dna_dir)
-
-        dna_file = os.path.join(dna_dir, 'pet_dna.json')
+        dna_file = os.path.join(binary_dir, 'pet_dna.bin')
         if os.path.exists(dna_file):
-            if not init.send_file(dna_file, "/DATA/DNA/pet_dna.json"):
-                print("Failed to send pet_dna.json")
+            if not init.send_file(dna_file, "/DATA/DNA/pet_dna.bin"):
+                print("Failed to send pet_dna.bin")
                 return
         else:
-            print("Warning: pet_dna.json not found")
+            print("Warning: pet_dna.bin not found")
 
         models_dir = args.models_dir
         if not os.path.isabs(models_dir):
@@ -352,9 +367,9 @@ def main():
         else:
             print("Warning: critic_weights.bin not found in models dir")
 
-        # Delete pet_data.json to force regeneration from DNA on first boot
-        print("Deleting pet_data.json to force DNA-based initialization...")
-        init.delete_file("/BRAIN/PET/pet_data.json")
+        if not args.keep_pet:
+            print("Deleting pet_data.bin to force DNA-based initialization...")
+            init.delete_file("/BRAIN/PET/pet_data.bin")
 
         if not init.complete_init():
             return

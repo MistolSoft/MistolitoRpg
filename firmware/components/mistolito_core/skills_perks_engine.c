@@ -1,9 +1,10 @@
 #include "skills_perks_engine.h"
+#include "game_tables_structs.h"
 #include "storage_task.h"
 #include "esp_log.h"
 #include "esp_random.h"
-#include "cJSON.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "SKILLS";
 
@@ -34,42 +35,20 @@ bool perk_is_known(pet_t *pet, uint8_t perk_id)
     return false;
 }
 
-static bool check_stat_req(pet_t *pet, cJSON *req)
+static bool check_stat_req_bin(pet_t *pet, const stat_req_t *req)
 {
-    if (!req) return true;
-
-    cJSON *str_req = cJSON_GetObjectItem(req, "str");
-    if (str_req && pet->str < (uint8_t)str_req->valueint) return false;
-
-    cJSON *dex_req = cJSON_GetObjectItem(req, "dex");
-    if (dex_req && pet->dex < (uint8_t)dex_req->valueint) return false;
-
-    cJSON *con_req = cJSON_GetObjectItem(req, "con");
-    if (con_req && pet->con < (uint8_t)con_req->valueint) return false;
-
-    cJSON *int_req = cJSON_GetObjectItem(req, "int");
-    if (int_req && pet->intel < (uint8_t)int_req->valueint) return false;
-
-    cJSON *wis_req = cJSON_GetObjectItem(req, "wis");
-    if (wis_req && pet->wis < (uint8_t)wis_req->valueint) return false;
-
-    cJSON *cha_req = cJSON_GetObjectItem(req, "cha");
-    if (cha_req && pet->cha < (uint8_t)cha_req->valueint) return false;
-
+    if (pet->str < req->str) return false;
+    if (pet->dex < req->dex) return false;
+    if (pet->con < req->con) return false;
+    if (pet->intel < req->intel) return false;
+    if (pet->wis < req->wis) return false;
+    if (pet->cha < req->cha) return false;
     return true;
 }
 
-static bool check_profession_req(pet_t *pet, cJSON *prof_req)
+static bool check_profession_req_bin(pet_t *pet, uint8_t profession_req_mask)
 {
-    if (!prof_req || !cJSON_IsArray(prof_req)) return false;
-
-    cJSON *prof_item = NULL;
-    cJSON_ArrayForEach(prof_item, prof_req) {
-        if (prof_item->valueint == (int)pet->profession) {
-            return true;
-        }
-    }
-    return false;
+    return (profession_req_mask & (1 << pet->profession)) != 0;
 }
 
 bool skill_check_requirements(pet_t *pet, uint8_t skill_id, uint8_t profession_level)
@@ -77,44 +56,22 @@ bool skill_check_requirements(pet_t *pet, uint8_t skill_id, uint8_t profession_l
     if (pet == NULL) return false;
     if (skill_is_known(pet, skill_id)) return false;
 
-    const char *json = storage_get_game_tables_json();
-    if (!json) return false;
+    FILE *f = fopen("/sdcard/DATA/TABLES/skills.bin", "rb");
+    if (!f) return false;
 
-    cJSON *root = cJSON_Parse(json);
-    if (!root) return false;
-
-    cJSON *skills = cJSON_GetObjectItem(root, "skills");
-    if (!skills) {
-        cJSON_Delete(root);
-        return false;
-    }
-
+    skill_record_t rec;
     bool meets = false;
-    cJSON *skill = NULL;
-    cJSON_ArrayForEach(skill, skills) {
-        cJSON *id_item = cJSON_GetObjectItem(skill, "id");
-        if (id_item && id_item->valueint == (int)skill_id) {
-            cJSON *level_req = cJSON_GetObjectItem(skill, "profession_level_req");
-            if (level_req && profession_level < (uint8_t)level_req->valueint) {
-                break;
+    while (fread(&rec, sizeof(skill_record_t), 1, f) == 1) {
+        if (rec.id == skill_id) {
+            if (profession_level >= rec.profession_level_req &&
+                check_profession_req_bin(pet, rec.profession_req_mask) &&
+                check_stat_req_bin(pet, &rec.stat_req)) {
+                meets = true;
             }
-
-            cJSON *prof_req = cJSON_GetObjectItem(skill, "profession_req");
-            if (!check_profession_req(pet, prof_req)) {
-                break;
-            }
-
-            cJSON *stat_req = cJSON_GetObjectItem(skill, "stat_req");
-            if (!check_stat_req(pet, stat_req)) {
-                break;
-            }
-
-            meets = true;
             break;
         }
     }
-
-    cJSON_Delete(root);
+    fclose(f);
     return meets;
 }
 
@@ -123,124 +80,73 @@ bool perk_check_requirements(pet_t *pet, uint8_t perk_id, uint8_t profession_lev
     if (pet == NULL) return false;
     if (perk_is_known(pet, perk_id)) return false;
 
-    const char *json = storage_get_game_tables_json();
-    if (!json) return false;
+    FILE *f = fopen("/sdcard/DATA/TABLES/perks.bin", "rb");
+    if (!f) return false;
 
-    cJSON *root = cJSON_Parse(json);
-    if (!root) return false;
-
-    cJSON *perks = cJSON_GetObjectItem(root, "perks");
-    if (!perks) {
-        cJSON_Delete(root);
-        return false;
-    }
-
+    perk_record_t rec;
     bool meets = false;
-    cJSON *perk = NULL;
-    cJSON_ArrayForEach(perk, perks) {
-        cJSON *id_item = cJSON_GetObjectItem(perk, "id");
-        if (id_item && id_item->valueint == (int)perk_id) {
-            cJSON *level_req = cJSON_GetObjectItem(perk, "profession_level_req");
-            if (level_req && profession_level < (uint8_t)level_req->valueint) {
-                break;
+    while (fread(&rec, sizeof(perk_record_t), 1, f) == 1) {
+        if (rec.id == perk_id) {
+            if (profession_level >= rec.profession_level_req &&
+                check_profession_req_bin(pet, rec.profession_req_mask) &&
+                check_stat_req_bin(pet, &rec.stat_req)) {
+                meets = true;
             }
-
-            cJSON *prof_req = cJSON_GetObjectItem(perk, "profession_req");
-            if (!check_profession_req(pet, prof_req)) {
-                break;
-            }
-
-            cJSON *stat_req = cJSON_GetObjectItem(perk, "stat_req");
-            if (!check_stat_req(pet, stat_req)) {
-                break;
-            }
-
-            meets = true;
             break;
         }
     }
-
-    cJSON_Delete(root);
+    fclose(f);
     return meets;
 }
 
 void skills_perks_get_available(pet_t *pet, uint8_t profession_level, learn_candidate_t *candidates, uint8_t *count)
 {
     if (pet == NULL || candidates == NULL || count == NULL) {
-        *count = 0;
+        if (count) *count = 0;
         return;
     }
 
     *count = 0;
 
-    const char *json = storage_get_game_tables_json();
-    if (!json) return;
-
-    cJSON *root = cJSON_Parse(json);
-    if (!root) return;
-
-    cJSON *skills = cJSON_GetObjectItem(root, "skills");
-    if (skills && cJSON_IsArray(skills)) {
-        cJSON *skill = NULL;
-        cJSON_ArrayForEach(skill, skills) {
-            cJSON *id_item = cJSON_GetObjectItem(skill, "id");
-            if (!id_item) continue;
-
-            uint8_t skill_id = (uint8_t)id_item->valueint;
-            if (!skill_check_requirements(pet, skill_id, profession_level)) continue;
-
-            cJSON *dp_cost = cJSON_GetObjectItem(skill, "dp_cost");
-            cJSON *success_dc = cJSON_GetObjectItem(skill, "success_dc");
-            cJSON *intent_item = cJSON_GetObjectItem(skill, "intent_type");
-
-            if (pet->dp >= (uint32_t)(dp_cost ? dp_cost->valueint : 5)) {
-                candidates[*count].type = LEARN_TYPE_SKILL;
-                candidates[*count].id = skill_id;
-                candidates[*count].intent_type = 0;
-                if (intent_item && cJSON_IsString(intent_item)) {
-                    const char *intent_str = intent_item->valuestring;
-                    if (strcmp(intent_str, "attack") == 0) candidates[*count].intent_type = 0;
-                    else if (strcmp(intent_str, "defend") == 0) candidates[*count].intent_type = 1;
-                    else if (strcmp(intent_str, "heal") == 0) candidates[*count].intent_type = 2;
-                    else if (strcmp(intent_str, "magic") == 0) candidates[*count].intent_type = 3;
-                    else if (strcmp(intent_str, "support") == 0) candidates[*count].intent_type = 4;
-                    else if (strcmp(intent_str, "flee") == 0) candidates[*count].intent_type = 5;
+    FILE *f_skills = fopen("/sdcard/DATA/TABLES/skills.bin", "rb");
+    if (f_skills) {
+        skill_record_t rec;
+        while (fread(&rec, sizeof(skill_record_t), 1, f_skills) == 1) {
+            if (skill_check_requirements(pet, rec.id, profession_level)) {
+                if (pet->dp >= (uint32_t)rec.dp_cost) {
+                    candidates[*count].type = LEARN_TYPE_SKILL;
+                    candidates[*count].id = rec.id;
+                    candidates[*count].intent_type = rec.intent_type;
+                    candidates[*count].dp_cost = rec.dp_cost;
+                    candidates[*count].success_dc = rec.success_dc;
+                    (*count)++;
+                    if (*count >= 32) break;
                 }
-                candidates[*count].dp_cost = dp_cost ? (uint8_t)dp_cost->valueint : 5;
-                candidates[*count].success_dc = success_dc ? (uint8_t)success_dc->valueint : 10;
-                (*count)++;
-
-                if (*count >= 32) break;
             }
         }
+        fclose(f_skills);
     }
 
-    cJSON *perks = cJSON_GetObjectItem(root, "perks");
-    if (perks && cJSON_IsArray(perks) && *count < 32) {
-        cJSON *perk = NULL;
-        cJSON_ArrayForEach(perk, perks) {
-            cJSON *id_item = cJSON_GetObjectItem(perk, "id");
-            if (!id_item) continue;
+    if (*count >= 32) return;
 
-            uint8_t perk_id = (uint8_t)id_item->valueint;
-            if (!perk_check_requirements(pet, perk_id, profession_level)) continue;
-
-            cJSON *dp_cost = cJSON_GetObjectItem(perk, "dp_cost");
-            cJSON *success_dc = cJSON_GetObjectItem(perk, "success_dc");
-
-            if (pet->dp >= (uint32_t)(dp_cost ? dp_cost->valueint : 5)) {
-                candidates[*count].type = LEARN_TYPE_PERK;
-                candidates[*count].id = perk_id;
-                candidates[*count].dp_cost = dp_cost ? (uint8_t)dp_cost->valueint : 5;
-                candidates[*count].success_dc = success_dc ? (uint8_t)success_dc->valueint : 10;
-                (*count)++;
-
-                if (*count >= 32) break;
+    FILE *f_perks = fopen("/sdcard/DATA/TABLES/perks.bin", "rb");
+    if (f_perks) {
+        perk_record_t rec;
+        while (fread(&rec, sizeof(perk_record_t), 1, f_perks) == 1) {
+            if (perk_check_requirements(pet, rec.id, profession_level)) {
+                if (pet->dp >= (uint32_t)rec.dp_cost) {
+                    candidates[*count].type = LEARN_TYPE_PERK;
+                    candidates[*count].id = rec.id;
+                    candidates[*count].intent_type = 0;
+                    candidates[*count].dp_cost = rec.dp_cost;
+                    candidates[*count].success_dc = rec.success_dc;
+                    (*count)++;
+                    if (*count >= 32) break;
+                }
             }
         }
+        fclose(f_perks);
     }
-
-    cJSON_Delete(root);
 }
 
 static void shuffle_candidates(learn_candidate_t *arr, uint8_t n)

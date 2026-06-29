@@ -1,4 +1,5 @@
 import os
+import sys
 import csv
 import random
 import numpy as np
@@ -9,6 +10,12 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
+if TOOLS_DIR not in sys.path:
+    sys.path.append(TOOLS_DIR)
+
+from heuristics import decide_action
+from generate_dataset import SCENARIOS, gen_scenario, calc_hit_prob, calc_defense_prob, calc_avg_pet_damage, calc_avg_enemy_damage
+
 PROJECT_DIR = os.path.dirname(TOOLS_DIR)
 DATASET_DIR = os.path.join(PROJECT_DIR, "data", "datasets")
 MODEL_DIR = os.path.join(PROJECT_DIR, "models")
@@ -50,206 +57,14 @@ def calc_luck_dmg(dmg_real, dmg_min, dmg_max):
     return normalized * 2.0 - 1.0
 
 
-def calc_hit_prob(target_ac, attack_bonus):
-    roll_needed = target_ac - attack_bonus
-    if roll_needed < 2:
-        roll_needed = 2
-    if roll_needed > 20:
-        roll_needed = 20
-    return (21.0 - float(roll_needed)) / 20.0
 
-
-def calc_defense_prob(pet_ac, enemy_attack):
-    roll_needed = pet_ac - enemy_attack
-    if roll_needed < 2:
-        roll_needed = 2
-    if roll_needed > 20:
-        roll_needed = 20
-    return (21.0 - float(roll_needed)) / 20.0
-
-
-def calc_avg_pet_damage(dice_count, dice_size, str_mod):
-    avg_roll = (dice_size + 1) / 2.0
-    return max(1.0, dice_count * avg_roll + str_mod)
-
-
-def calc_avg_enemy_damage(dice_size, damage_bonus):
-    avg_roll = (dice_size + 1) / 2.0
-    return max(1.0, avg_roll + damage_bonus)
-
-
-def decide_action(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio, threat_level, dmg_efficiency, quality_score, last_action):
-    if pet_hp_ratio < 0.15:
-        return 2
-    if pet_hp_ratio < 0.3 and enemy_hp_ratio > 2.0:
-        return 2
-
-    if quality_score < -0.3:
-        if last_action == 0:
-            if threat_level > 0.5:
-                return 1
-            elif pet_hp_ratio < 0.3:
-                return 2
-        elif last_action == 1:
-            if hit_prob > 0.5:
-                return 0
-        elif last_action == 2:
-            if hit_prob > 0.4:
-                return 0
-
-    if quality_score > 0.3:
-        if last_action == 0:
-            return 0
-        elif last_action == 1:
-            if hit_prob > 0.6:
-                return 0
-
-    if hit_prob > 0.65 and threat_level < 0.4 and dmg_efficiency > 0.3:
-        return 0
-    if hit_prob > 0.5 and pet_hp_ratio > 0.6 and enemy_hp_ratio < 1.0:
-        return 0
-    if hit_prob > 0.45 and pet_hp_ratio > 0.5 and threat_level < 0.5:
-        return 0
-
-    if threat_level > 0.6 and pet_hp_ratio < 0.4:
-        return 1
-    if enemy_hp_ratio > 1.8 and pet_hp_ratio < 0.5:
-        return 1
-    if defense_prob > 0.5 and pet_hp_ratio < 0.6:
-        return 1
-
-    return 0
-
-
-def gen_scenario(type_name):
-    if type_name == "overwhelming_advantage":
-        pet_hp_max = random.randint(60, 80)
-        pet_hp = random.randint(int(pet_hp_max * 0.8), pet_hp_max)
-        pet_dex_mod = random.randint(2, 4)
-        pet_str_mod = random.randint(2, 4)
-        pet_dice_count = 3
-        pet_dice_size = random.choice([6, 8])
-        enemy_hp_max = random.randint(15, 30)
-        enemy_hp = random.randint(int(enemy_hp_max * 0.2), int(enemy_hp_max * 0.5))
-        enemy_attack = random.randint(1, 4)
-        enemy_ac = random.randint(7, 10)
-        enemy_damage_dice = random.choice([4, 6])
-        enemy_damage_bonus = random.randint(0, 1)
-
-    elif type_name == "slight_advantage":
-        pet_hp_max = random.randint(50, 70)
-        pet_hp = random.randint(int(pet_hp_max * 0.6), pet_hp_max)
-        pet_dex_mod = random.randint(1, 3)
-        pet_str_mod = random.randint(1, 3)
-        pet_dice_count = 3
-        pet_dice_size = random.choice([4, 6])
-        enemy_hp_max = random.randint(25, 45)
-        enemy_hp = random.randint(int(enemy_hp_max * 0.4), int(enemy_hp_max * 0.7))
-        enemy_attack = random.randint(2, 6)
-        enemy_ac = random.randint(8, 12)
-        enemy_damage_dice = random.choice([4, 6, 8])
-        enemy_damage_bonus = random.randint(0, 2)
-
-    elif type_name == "even_match":
-        pet_hp_max = random.randint(40, 60)
-        pet_hp = random.randint(int(pet_hp_max * 0.4), int(pet_hp_max * 0.7))
-        pet_dex_mod = random.randint(1, 3)
-        pet_str_mod = random.randint(1, 3)
-        pet_dice_count = 3
-        pet_dice_size = random.choice([4, 6])
-        enemy_hp_max = random.randint(30, 50)
-        enemy_hp = random.randint(int(enemy_hp_max * 0.4), int(enemy_hp_max * 0.7))
-        enemy_attack = random.randint(3, 7)
-        enemy_ac = random.randint(9, 13)
-        enemy_damage_dice = random.choice([6, 8])
-        enemy_damage_bonus = random.randint(1, 3)
-
-    elif type_name == "slight_disadvantage":
-        pet_hp_max = random.randint(35, 55)
-        pet_hp = random.randint(int(pet_hp_max * 0.3), int(pet_hp_max * 0.5))
-        pet_dex_mod = random.randint(0, 2)
-        pet_str_mod = random.randint(0, 2)
-        pet_dice_count = 2
-        pet_dice_size = random.choice([4, 6])
-        enemy_hp_max = random.randint(35, 55)
-        enemy_hp = random.randint(int(enemy_hp_max * 0.5), int(enemy_hp_max * 0.8))
-        enemy_attack = random.randint(5, 9)
-        enemy_ac = random.randint(11, 14)
-        enemy_damage_dice = random.choice([6, 8, 10])
-        enemy_damage_bonus = random.randint(2, 4)
-
-    elif type_name == "desperate":
-        pet_hp_max = random.randint(30, 50)
-        pet_hp = random.randint(1, int(pet_hp_max * 0.2))
-        pet_dex_mod = random.randint(0, 2)
-        pet_str_mod = random.randint(0, 2)
-        pet_dice_count = 2
-        pet_dice_size = random.choice([4, 6])
-        enemy_hp_max = random.randint(40, 70)
-        enemy_hp = random.randint(int(enemy_hp_max * 0.6), enemy_hp_max)
-        enemy_attack = random.randint(6, 12)
-        enemy_ac = random.randint(10, 14)
-        enemy_damage_dice = random.choice([8, 10, 12])
-        enemy_damage_bonus = random.randint(3, 6)
-
-    elif type_name == "glass_cannon":
-        pet_hp_max = random.randint(25, 40)
-        pet_hp = random.randint(int(pet_hp_max * 0.3), int(pet_hp_max * 0.6))
-        pet_dex_mod = random.randint(3, 4)
-        pet_str_mod = random.randint(3, 4)
-        pet_dice_count = 3
-        pet_dice_size = random.choice([6, 8])
-        enemy_hp_max = random.randint(20, 35)
-        enemy_hp = random.randint(int(enemy_hp_max * 0.3), int(enemy_hp_max * 0.6))
-        enemy_attack = random.randint(4, 8)
-        enemy_ac = random.randint(8, 11)
-        enemy_damage_dice = random.choice([8, 10])
-        enemy_damage_bonus = random.randint(2, 5)
-
-    else:
-        pet_hp_max = random.randint(40, 80)
-        pet_hp = random.randint(int(pet_hp_max * 0.4), pet_hp_max)
-        pet_dex_mod = random.randint(1, 4)
-        pet_str_mod = random.randint(1, 4)
-        pet_dice_count = 3
-        pet_dice_size = random.choice([4, 6])
-        enemy_hp_max = random.randint(20, 60)
-        enemy_hp = random.randint(int(enemy_hp_max * 0.3), enemy_hp_max)
-        enemy_attack = random.randint(2, 8)
-        enemy_ac = random.randint(8, 14)
-        enemy_damage_dice = random.choice([4, 6, 8])
-        enemy_damage_bonus = random.randint(0, 3)
-
-    return {
-        "pet_hp_max": pet_hp_max,
-        "pet_hp": pet_hp,
-        "pet_dex_mod": pet_dex_mod,
-        "pet_ac": 10 + pet_dex_mod,
-        "pet_str_mod": pet_str_mod,
-        "pet_dice_count": pet_dice_count,
-        "pet_dice_size": pet_dice_size,
-        "enemy_hp_max": enemy_hp_max,
-        "enemy_hp": enemy_hp,
-        "enemy_attack": enemy_attack,
-        "enemy_ac": enemy_ac,
-        "enemy_damage_dice": enemy_damage_dice,
-        "enemy_damage_bonus": enemy_damage_bonus,
-    }
-
-
-SCENARIOS = [
-    "overwhelming_advantage",
-    "slight_advantage",
-    "even_match",
-    "slight_disadvantage",
-    "desperate",
-    "glass_cannon",
-]
 
 
 def simulate_combat():
     scenario_type = random.choice(SCENARIOS)
     s = gen_scenario(scenario_type)
+    profile = random.choice(["balanced", "aggressive", "cautious"])
+    epsilon = 0.15
 
     pet_hp_max = s["pet_hp_max"]
     pet_hp = s["pet_hp"]
@@ -268,7 +83,7 @@ def simulate_combat():
 
     hit_prob = calc_hit_prob(enemy_ac, pet_dex_mod)
     defense_prob = calc_defense_prob(pet_ac, enemy_attack)
-    avg_pet_dmg = calc_avg_pet_damage(pet_dice_count, pet_dice_size, pet_str_mod)
+    avg_pet_dmg = calc_avg_pet_damage(pet_dice_count, pet_dice_size, pet_str_mod, 0)
     avg_enemy_dmg = calc_avg_enemy_damage(enemy_damage_dice, enemy_damage_bonus)
 
     history_features = []
@@ -291,7 +106,10 @@ def simulate_combat():
         dmg_eff = avg_pet_dmg / enemy_hp if enemy_hp > 0 else 1.0
         threat = avg_enemy_dmg / pet_hp if pet_hp > 0 else 1.0
 
-        action = decide_action(hit_prob, defense_prob, my_hp_ratio, enemy_hp_ratio_val, threat, dmg_eff, quality_score, last_action)
+        if random.random() < epsilon:
+            action = random.choice([0, 1, 2])
+        else:
+            action = decide_action(hit_prob, defense_prob, my_hp_ratio, enemy_hp_ratio_val, threat, dmg_eff, quality_score, last_action, profile=profile)
 
         pet_hit = False
         damage_dealt = 0.0
@@ -449,6 +267,34 @@ def main():
         train_loss /= len(X_train)
         val_loss /= len(X_test)
         print(f"Epoch {epoch+1:3d}/{EPOCHS}  train_loss: {train_loss:.4f}  val_loss: {val_loss:.4f}")
+
+    print("\n--- CRITIC BENCHMARK ---")
+    mse_zero = 0.0
+    mse_hp = 0.0
+    with torch.no_grad():
+        for Xb, yb in test_loader:
+            Xb, yb = Xb.to(DEVICE), yb.to(DEVICE)
+            
+            # Baseline Zero: Always predicts 0.0
+            pred_zero = torch.zeros_like(yb)
+            mse_zero += criterion(pred_zero, yb).item() * Xb.size(0)
+            
+            # Baseline HP-Only: Predicts based mostly on HP advantage (feature index 2 is f_hp_advantage)
+            # We scale it by 0.5 as a rough linear guess
+            hp_adv = Xb[:, 2]
+            pred_hp = hp_adv * 0.5 
+            mse_hp += criterion(pred_hp, yb).item() * Xb.size(0)
+            
+    mse_zero /= len(X_test)
+    mse_hp /= len(X_test)
+    
+    print(f"Neural Net MSE:      {val_loss:.4f}")
+    print(f"Baseline Zero MSE:   {mse_zero:.4f}")
+    print(f"Baseline HP MSE:     {mse_hp:.4f}")
+    if val_loss < mse_zero and val_loss < mse_hp:
+        print("RESULT: SUCCESS - The CriticNet outperformed the baselines!")
+    else:
+        print("RESULT: WARNING - The CriticNet did not beat all baselines.")
 
     os.makedirs(MODEL_DIR, exist_ok=True)
     checkpoint_path = os.path.join(MODEL_DIR, "critic.pth")
