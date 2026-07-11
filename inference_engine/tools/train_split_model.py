@@ -12,7 +12,7 @@ PROJECT_DIR = os.path.dirname(TOOLS_DIR)
 DATASET_PATH = os.path.join(PROJECT_DIR, "data", "datasets", "combat_dataset.csv")
 MODEL_DIR = os.path.join(PROJECT_DIR, "models")
 
-EPOCHS = 100
+EPOCHS = 200
 BATCH_SIZE = 64
 LR = 1e-3
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -21,17 +21,19 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 class Backbone(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(9, 16)
+        self.fc1 = nn.Linear(9, 32)
         self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(16, 16)
+        self.fc2 = nn.Linear(32, 32)
         self.relu2 = nn.ReLU()
+        self.fc3 = nn.Linear(32, 16)
+        self.relu3 = nn.ReLU()
 
     def forward(self, x):
-        return self.relu2(self.fc2(self.relu1(self.fc1(x))))
+        return self.relu3(self.fc3(self.relu2(self.fc2(self.relu1(self.fc1(x))))))
 
 
 class PolicyHead(nn.Module):
-    def __init__(self, num_actions=6):
+    def __init__(self, num_actions=3):
         super().__init__()
         self.fc = nn.Linear(16, num_actions)
 
@@ -49,7 +51,7 @@ class CriticHead(nn.Module):
 
 
 class CombatModelSplit(nn.Module):
-    def __init__(self, num_actions=6):
+    def __init__(self, num_actions=3):
         super().__init__()
         self.backbone = Backbone()
         self.policy = PolicyHead(num_actions)

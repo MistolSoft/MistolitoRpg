@@ -447,7 +447,18 @@ def simulate_episode(critic):
     enemy_ac = s["enemy_ac"]
     enemy_damage_dice = s["enemy_damage_dice"]
     enemy_damage_bonus = s["enemy_damage_bonus"]
-    enemy_level = random.randint(max(1, pet_level - 2), pet_level + 2)
+    if random.random() < 0.25:
+        enemy_level = random.randint(pet_level + 3, pet_level + 8)
+    else:
+        enemy_level = random.randint(max(1, pet_level - 2), pet_level + 2)
+
+    if enemy_level > pet_level:
+        level_diff = enemy_level - pet_level
+        enemy_hp_max = int(enemy_hp_max * (1.0 + 0.25 * level_diff))
+        enemy_hp = int(enemy_hp * (1.0 + 0.25 * level_diff))
+        enemy_attack += int(0.8 * level_diff)
+        enemy_ac += int(0.5 * level_diff)
+        enemy_damage_bonus += int(0.5 * level_diff)
 
     hit_prob = calc_hit_prob(enemy_ac, pet_dex_mod)
     defense_prob = calc_defense_prob(pet_ac, enemy_attack)

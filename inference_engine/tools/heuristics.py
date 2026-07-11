@@ -23,6 +23,9 @@ def calc_avg_enemy_damage(dice_size, damage_bonus):
     return max(1.0, avg_roll + damage_bonus)
 
 def decide_action_balanced(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio, threat_level, dmg_efficiency, quality_score, last_action):
+    if enemy_hp_ratio > 2.5 or threat_level > 0.7:
+        return 2
+
     if pet_hp_ratio < 0.15:
         return 2
     if pet_hp_ratio < 0.3 and enemy_hp_ratio > 2.0:
@@ -65,32 +68,32 @@ def decide_action_balanced(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio,
     return 0
 
 def decide_action_aggressive(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio, threat_level, dmg_efficiency, quality_score, last_action):
-    # Rara vez huye
+    if enemy_hp_ratio > 3.2 or threat_level > 0.9:
+        return 2
+
     if pet_hp_ratio < 0.05:
         return 2
     
-    # Solo defiende si el HP es crítico y el enemigo puede matarnos
     if pet_hp_ratio < 0.2 and threat_level > 0.8:
         return 1
         
-    # Por defecto, ataca siempre a menos que la probabilidad de acertar sea casi nula y el daño bajo
     if hit_prob < 0.2 and dmg_efficiency < 0.1 and defense_prob > 0.6:
         return 1
         
     return 0
 
 def decide_action_cautious(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio, threat_level, dmg_efficiency, quality_score, last_action):
-    # Huye fácilmente
+    if enemy_hp_ratio > 1.8 or threat_level > 0.5:
+        return 2
+
     if pet_hp_ratio < 0.25:
         return 2
     if pet_hp_ratio < 0.4 and threat_level > 0.7:
         return 2
         
-    # Defiende frecuentemente si hay amenaza
     if threat_level > 0.4 or pet_hp_ratio < 0.6:
         return 1
         
-    # Solo ataca si es seguro
     if hit_prob > 0.6 and threat_level < 0.3:
         return 0
         
@@ -103,4 +106,3 @@ def decide_action(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio, threat_l
         return decide_action_cautious(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio, threat_level, dmg_efficiency, quality_score, last_action)
     else:
         return decide_action_balanced(hit_prob, defense_prob, pet_hp_ratio, enemy_hp_ratio, threat_level, dmg_efficiency, quality_score, last_action)
-

@@ -25,17 +25,19 @@ CALIB_SAMPLES = 500
 class Backbone(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(9, 16)
+        self.fc1 = nn.Linear(9, 32)
         self.relu1 = nn.ReLU()
-        self.fc2 = nn.Linear(16, 16)
+        self.fc2 = nn.Linear(32, 32)
         self.relu2 = nn.ReLU()
+        self.fc3 = nn.Linear(32, 16)
+        self.relu3 = nn.ReLU()
 
     def forward(self, x):
-        return self.relu2(self.fc2(self.relu1(self.fc1(x))))
+        return self.relu3(self.fc3(self.relu2(self.fc2(self.relu1(self.fc1(x))))))
 
 
 class PolicyHead(nn.Module):
-    def __init__(self, num_actions=6):
+    def __init__(self, num_actions=3):
         super().__init__()
         self.fc = nn.Linear(16, num_actions)
 
@@ -53,7 +55,7 @@ class CriticHead(nn.Module):
 
 
 class CombatModelSplit(nn.Module):
-    def __init__(self, num_actions=6):
+    def __init__(self, num_actions=3):
         super().__init__()
         self.backbone = Backbone()
         self.policy = PolicyHead(num_actions)
@@ -127,6 +129,35 @@ def verify(model):
     print(f"  Output range: [{features_ref.min():.3f}, {features_ref.max():.3f}]")
 
 
+def export_actor_init(model, num_actions=3):
+    import struct
+    path = os.path.join(MODEL_DIR, "actor_init.bin")
+    w = model.policy.fc.weight.data.numpy().astype(np.float32)
+    b = model.policy.fc.bias.data.numpy().astype(np.float32)
+    magic = 0x50484544
+    version = 1
+    epoch = 0
+    meta = struct.pack("<IIBII", magic, version, num_actions, epoch, 0)
+    with open(path, "wb") as f:
+        f.write(meta)
+        f.write(w.T.flatten().tobytes())
+        f.write(b.tobytes())
+    print(f"Actor init weights: {path} (actions={num_actions})")
+
+
+def export_critic(model):
+    import struct
+    path = os.path.join(MODEL_DIR, "value_head.bin")
+    w = model.critic.fc.weight.data.numpy().astype(np.float32)
+    b = model.critic.fc.bias.data.numpy().astype(np.float32)
+    meta = struct.pack("<III", 0x43524954, 1, 0)
+    with open(path, "wb") as f:
+        f.write(meta)
+        f.write(w.tobytes())
+        f.write(b.tobytes())
+    print(f"Value head weights: {path}")
+
+
 def main():
     print("=== Export + Quantize backbone ===\n")
 
@@ -142,9 +173,15 @@ def main():
 
     quantize_backbone(calib_loader)
 
+    print("\n--- Exporting Policy & Critic binary files ---")
+    export_actor_init(model)
+    export_critic(model)
+
     print("\n=== Done ===")
     print("Files for SD card:")
     print(f"  {BACKBONE_ESPDL}")
+    print(f"  {os.path.join(MODEL_DIR, 'actor_init.bin')}")
+    print(f"  {os.path.join(MODEL_DIR, 'value_head.bin')}")
 
 
 if __name__ == "__main__":

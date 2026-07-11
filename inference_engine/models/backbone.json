@@ -16,8 +16,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 387573154,
-                "dominator": 387573154
+                "hash": 1863959520,
+                "dominator": 1863959520
             },
             "fc1.weight": {
                 "bit_width": 8,
@@ -34,8 +34,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 1287517661,
-                "dominator": 1287517661
+                "hash": 3598766883,
+                "dominator": 3598766883
             },
             "fc1.bias": {
                 "bit_width": 20,
@@ -52,8 +52,8 @@
                 "state": "PASSIVE",
                 "quant_min": -524288,
                 "quant_max": 524287,
-                "hash": 1892839724,
-                "dominator": 1892839724
+                "hash": 774009178,
+                "dominator": 774009178
             },
             "relu": {
                 "bit_width": 8,
@@ -70,8 +70,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 1587018673,
-                "dominator": 1587018673
+                "hash": 2971655895,
+                "dominator": 2971655895
             }
         },
         "node_linear_1": {
@@ -90,8 +90,8 @@
                 "state": "OVERLAPPED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 910995376,
-                "dominator": 1587018673
+                "hash": 8199742,
+                "dominator": 2971655895
             },
             "fc2.weight": {
                 "bit_width": 8,
@@ -108,8 +108,8 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 3405467571,
-                "dominator": 3405467571
+                "hash": 2507258889,
+                "dominator": 2507258889
             },
             "fc2.bias": {
                 "bit_width": 20,
@@ -126,8 +126,82 @@
                 "state": "PASSIVE",
                 "quant_min": -524288,
                 "quant_max": 524287,
-                "hash": 1333345194,
-                "dominator": 1333345194
+                "hash": 2849951400,
+                "dominator": 2849951400
+            },
+            "relu_1": {
+                "bit_width": 8,
+                "policy": {
+                    "PER_TENSOR": true,
+                    "PER_CHANNEL": false,
+                    "LINEAR": true,
+                    "FLOATING": false,
+                    "SYMMETRICAL": true,
+                    "ASYMMETRICAL": false,
+                    "POWER_OF_2": true,
+                    "DYNAMIC": false
+                },
+                "state": "ACTIVATED",
+                "quant_min": -128,
+                "quant_max": 127,
+                "hash": 4013649821,
+                "dominator": 4013649821
+            }
+        },
+        "node_linear_2": {
+            "relu_1": {
+                "bit_width": 8,
+                "policy": {
+                    "PER_TENSOR": true,
+                    "PER_CHANNEL": false,
+                    "LINEAR": true,
+                    "FLOATING": false,
+                    "SYMMETRICAL": true,
+                    "ASYMMETRICAL": false,
+                    "POWER_OF_2": true,
+                    "DYNAMIC": false
+                },
+                "state": "OVERLAPPED",
+                "quant_min": -128,
+                "quant_max": 127,
+                "hash": 1257309164,
+                "dominator": 4013649821
+            },
+            "fc3.weight": {
+                "bit_width": 8,
+                "policy": {
+                    "PER_TENSOR": true,
+                    "PER_CHANNEL": false,
+                    "LINEAR": true,
+                    "FLOATING": false,
+                    "SYMMETRICAL": true,
+                    "ASYMMETRICAL": false,
+                    "POWER_OF_2": true,
+                    "DYNAMIC": false
+                },
+                "state": "ACTIVATED",
+                "quant_min": -128,
+                "quant_max": 127,
+                "hash": 807551743,
+                "dominator": 807551743
+            },
+            "fc3.bias": {
+                "bit_width": 20,
+                "policy": {
+                    "PER_TENSOR": true,
+                    "PER_CHANNEL": false,
+                    "LINEAR": true,
+                    "FLOATING": false,
+                    "SYMMETRICAL": true,
+                    "ASYMMETRICAL": false,
+                    "POWER_OF_2": true,
+                    "DYNAMIC": false
+                },
+                "state": "PASSIVE",
+                "quant_min": -524288,
+                "quant_max": 524287,
+                "hash": 1384681926,
+                "dominator": 1384681926
             },
             "features": {
                 "bit_width": 8,
@@ -144,41 +218,54 @@
                 "state": "ACTIVATED",
                 "quant_min": -128,
                 "quant_max": 127,
-                "hash": 3057535079,
-                "dominator": 3057535079
+                "hash": 3628925811,
+                "dominator": 3628925811
             }
         }
     },
     "dispatchings": {
         "node_linear": "ESPDL_S3_INT8",
-        "node_linear_1": "ESPDL_S3_INT8"
+        "node_linear_1": "ESPDL_S3_INT8",
+        "node_linear_2": "ESPDL_S3_INT8"
     },
     "values": {
-        "387573154": {
-            "scale": 0.25,
-            "zero_point": 0.0
-        },
-        "1287517661": {
+        "1863959520": {
             "scale": 0.03125,
             "zero_point": 0.0
         },
-        "1892839724": {
-            "scale": 0.0078125,
+        "3598766883": {
+            "scale": 0.03125,
             "zero_point": 0.0
         },
-        "1587018673": {
-            "scale": 0.0625,
-            "zero_point": 0.0
-        },
-        "3405467571": {
-            "scale": 0.015625,
-            "zero_point": 0.0
-        },
-        "1333345194": {
+        "774009178": {
             "scale": 0.0009765625,
             "zero_point": 0.0
         },
-        "3057535079": {
+        "2971655895": {
+            "scale": 0.25,
+            "zero_point": 0.0
+        },
+        "2507258889": {
+            "scale": 0.03125,
+            "zero_point": 0.0
+        },
+        "2849951400": {
+            "scale": 0.0078125,
+            "zero_point": 0.0
+        },
+        "4013649821": {
+            "scale": 0.125,
+            "zero_point": 0.0
+        },
+        "807551743": {
+            "scale": 0.0625,
+            "zero_point": 0.0
+        },
+        "1384681926": {
+            "scale": 0.0078125,
+            "zero_point": 0.0
+        },
+        "3628925811": {
             "scale": 0.0625,
             "zero_point": 0.0
         }
