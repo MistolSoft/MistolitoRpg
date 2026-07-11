@@ -1,12 +1,15 @@
 #include "skills_perks_engine.h"
 #include "game_tables_structs.h"
 #include "storage_task.h"
+#include "spi_bus.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include <string.h>
 #include <stdio.h>
 
 static const char *TAG = "SKILLS";
+
+__attribute__((weak)) void on_skill_learned(pet_t *pet, uint8_t skill_slot) {}
 
 static uint8_t roll_d20(void)
 {
@@ -56,8 +59,10 @@ bool skill_check_requirements(pet_t *pet, uint8_t skill_id, uint8_t profession_l
     if (pet == NULL) return false;
     if (skill_is_known(pet, skill_id)) return false;
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/skills.bin", "rb");
-    if (!f) return false;
+    if (!f) { spi_bus_unlock(); return false; }
 
     skill_record_t rec;
     bool meets = false;
@@ -72,6 +77,9 @@ bool skill_check_requirements(pet_t *pet, uint8_t skill_id, uint8_t profession_l
         }
     }
     fclose(f);
+
+    spi_bus_unlock();
+
     return meets;
 }
 
@@ -80,8 +88,10 @@ bool perk_check_requirements(pet_t *pet, uint8_t perk_id, uint8_t profession_lev
     if (pet == NULL) return false;
     if (perk_is_known(pet, perk_id)) return false;
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/perks.bin", "rb");
-    if (!f) return false;
+    if (!f) { spi_bus_unlock(); return false; }
 
     perk_record_t rec;
     bool meets = false;
@@ -96,6 +106,9 @@ bool perk_check_requirements(pet_t *pet, uint8_t perk_id, uint8_t profession_lev
         }
     }
     fclose(f);
+
+    spi_bus_unlock();
+
     return meets;
 }
 
@@ -107,6 +120,8 @@ void skills_perks_get_available(pet_t *pet, uint8_t profession_level, learn_cand
     }
 
     *count = 0;
+
+    spi_bus_lock();
 
     FILE *f_skills = fopen("/sdcard/DATA/TABLES/skills.bin", "rb");
     if (f_skills) {
@@ -127,26 +142,28 @@ void skills_perks_get_available(pet_t *pet, uint8_t profession_level, learn_cand
         fclose(f_skills);
     }
 
-    if (*count >= 32) return;
-
-    FILE *f_perks = fopen("/sdcard/DATA/TABLES/perks.bin", "rb");
-    if (f_perks) {
-        perk_record_t rec;
-        while (fread(&rec, sizeof(perk_record_t), 1, f_perks) == 1) {
-            if (perk_check_requirements(pet, rec.id, profession_level)) {
-                if (pet->dp >= (uint32_t)rec.dp_cost) {
-                    candidates[*count].type = LEARN_TYPE_PERK;
-                    candidates[*count].id = rec.id;
-                    candidates[*count].intent_type = 0;
-                    candidates[*count].dp_cost = rec.dp_cost;
-                    candidates[*count].success_dc = rec.success_dc;
-                    (*count)++;
-                    if (*count >= 32) break;
+    if (*count < 32) {
+        FILE *f_perks = fopen("/sdcard/DATA/TABLES/perks.bin", "rb");
+        if (f_perks) {
+            perk_record_t rec;
+            while (fread(&rec, sizeof(perk_record_t), 1, f_perks) == 1) {
+                if (perk_check_requirements(pet, rec.id, profession_level)) {
+                    if (pet->dp >= (uint32_t)rec.dp_cost) {
+                        candidates[*count].type = LEARN_TYPE_PERK;
+                        candidates[*count].id = rec.id;
+                        candidates[*count].intent_type = 0;
+                        candidates[*count].dp_cost = rec.dp_cost;
+                        candidates[*count].success_dc = rec.success_dc;
+                        (*count)++;
+                        if (*count >= 32) break;
+                    }
                 }
             }
+            fclose(f_perks);
         }
-        fclose(f_perks);
     }
+
+    spi_bus_unlock();
 }
 
 static void shuffle_candidates(learn_candidate_t *arr, uint8_t n)
@@ -181,8 +198,10 @@ bool skills_perks_try_learn(pet_t *pet, learn_candidate_t *candidate)
                 pet->skills[pet->skill_count].intent_type = candidate->intent_type;
                 pet->skills[pet->skill_count].uses_remaining = 3;
                 pet->skills[pet->skill_count].uses_max = 3;
+                uint8_t new_slot = pet->skill_count;
                 pet->skill_count++;
-                ESP_LOGI(TAG, "Skill %d learned! (intent=%d, roll=%d, DC=%d)", candidate->id, candidate->intent_type, roll, candidate->success_dc);
+                ESP_LOGI(TAG, "Skill %d learned! (slot=%d, intent=%d, roll=%d, DC=%d)", candidate->id, new_slot, candidate->intent_type, roll, candidate->success_dc);
+                on_skill_learned(pet, new_slot);
             }
         } else {
             if (pet->perk_count < MAX_PERKS) {

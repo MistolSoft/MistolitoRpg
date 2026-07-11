@@ -3,6 +3,7 @@
 
 #include "game_coordinator.h"
 #include "combat_engine.h"
+#include "search_engine.h"
 #include "rest_engine.h"
 #include "events.h"
 #include "storage_task.h"
@@ -166,7 +167,8 @@ void game_coordinator_start(void)
     critic_model_load(&g_critic_model);
     critic_history_init(&g_combat_history, 1.0f, 1.0f);
 
-    policy_head_init(&g_policy_head, 6);
+    uint8_t initial_actions = 3 + g_snapshot.pet.skill_count;
+    policy_head_init(&g_policy_head, initial_actions);
     policy_head_load(&g_policy_head);
 
     memset(&g_snapshot, 0, sizeof(g_snapshot));
@@ -336,8 +338,7 @@ case STAT_CHA: g_snapshot.pet.cha++; break;
 
 for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
     if (g_snapshot.pet.dna.intent_unlock[i] == new_level) {
-        exploration_manager_unlock(i);
-        ESP_LOGI(TAG, "Intent %d unlocked at level %d", i, new_level);
+        ESP_LOGI(TAG, "Intent %d unlocked at level %d (via DNA)", i, new_level);
     }
 }
 
@@ -416,21 +417,27 @@ static void calc_combat_inputs(pet_t *pet, enemy_t *enemy, float inputs[9], floa
     inputs[8] = quality_score;
 }
 
+void on_skill_learned(pet_t *pet, uint8_t skill_slot)
+{
+    uint8_t new_num_actions = 3 + pet->skill_count;
+    if (new_num_actions > g_policy_head.num_actions) {
+        policy_head_expand(&g_policy_head, new_num_actions);
+        ESP_LOGI(TAG, "Policy head expanded to %d actions for new skill in slot %d", new_num_actions, skill_slot);
+    }
+    exploration_manager_skill_learned(skill_slot);
+}
+
+
 static combat_action_e decide_combat_action(pet_t *pet, enemy_t *enemy)
 {
-    uint8_t forced_intention;
-    if (exploration_manager_should_force(pet->level, &pet->dna, &forced_intention)) {
-        exploration_manager_on_use(forced_intention);
-        uint8_t skill_id = skill_resolver_resolve(pet, forced_intention);
-        if (skill_id != 0xFF) {
-            g_resolved_skill_id = skill_id;
-            ESP_LOGI(TAG, "Forced intention %d -> skill %d", forced_intention, skill_id);
-            return ACTION_SKILL;
-        }
-        ESP_LOGW(TAG, "Forced intention %d but no skill, falling through", forced_intention);
+    uint8_t forced_nn_idx;
+    if (pet->skill_count > 0 && exploration_manager_should_force(pet, &forced_nn_idx)) {
+        uint8_t skill_slot = forced_nn_idx - 3;
+        exploration_manager_on_use(skill_slot);
+        g_resolved_skill_id = pet->skills[skill_slot].skill_id;
+        ESP_LOGI(TAG, "Forced exploration: slot %d -> skill_id %d", skill_slot, g_resolved_skill_id);
+        return ACTION_SKILL;
     }
-
-    uint8_t num_actions = dna_engine_get_unlocked_actions(&g_snapshot.pet.dna, pet->level);
 
     float input[9];
 
@@ -438,11 +445,20 @@ static combat_action_e decide_combat_action(pet_t *pet, enemy_t *enemy)
 
     if (inference_engine_is_loaded()) {
         float features[16];
+        ESP_LOGI(TAG, "NN Inputs: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]",
+                 input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], input[8]);
+
         esp_err_t ret = inference_engine_run(input, 9, features, 16);
         if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Backbone Features: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]",
+                     features[0], features[1], features[2], features[3], features[4], features[5], features[6], features[7],
+                     features[8], features[9], features[10], features[11], features[12], features[13], features[14], features[15]);
+
             float scores[PPO_MAX_ACTIONS];
+            memset(scores, 0, sizeof(scores));
             ret = policy_head_forward(&g_policy_head, features, scores);
             if (ret == ESP_OK) {
+                uint8_t num_actions = g_policy_head.num_actions;
                 uint8_t best_idx = 0;
                 float best_score = scores[0];
                 for (uint8_t i = 1; i < num_actions; i++) {
@@ -452,13 +468,25 @@ static combat_action_e decide_combat_action(pet_t *pet, enemy_t *enemy)
                     }
                 }
 
-                uint8_t skill_id = skill_resolver_resolve(pet, best_idx);
-                if (skill_id != 0xFF) {
-                    g_resolved_skill_id = skill_id;
-                    ESP_LOGI(TAG, "Inference: intention %d -> skill %d (score=%.3f)", best_idx, skill_id, best_score);
+                char score_buf[128] = {0};
+                int pos = 0;
+                pos += snprintf(score_buf + pos, sizeof(score_buf) - pos, "ATK=%.3f DEF=%.3f FLEE=%.3f", scores[0], scores[1], scores[2]);
+                for (uint8_t i = 0; i < pet->skill_count && (3 + i) < num_actions; i++) {
+                    pos += snprintf(score_buf + pos, sizeof(score_buf) - pos, " SK%d=%.3f", i, scores[3 + i]);
+                }
+                ESP_LOGI(TAG, "Inference run: best_idx=%d [%s]", best_idx, score_buf);
+
+                if (best_idx == 0) {
+                    return ACTION_ATTACK;
+                } else if (best_idx == 1) {
+                    return ACTION_DEFEND;
+                } else if (best_idx == 2) {
+                    return ACTION_FLEE;
+                } else if (best_idx - 3 < pet->skill_count) {
+                    g_resolved_skill_id = pet->skills[best_idx - 3].skill_id;
+                    ESP_LOGI(TAG, "Inference: skill slot %d -> skill_id %d (score=%.3f)", best_idx - 3, g_resolved_skill_id, best_score);
                     return ACTION_SKILL;
                 }
-                ESP_LOGW(TAG, "Inference: intention %d has no skill, trying next", best_idx);
             } else {
                 ESP_LOGW(TAG, "Policy head failed: %s", esp_err_to_name(ret));
             }
@@ -502,8 +530,13 @@ static void simulate_combat_turn(void)
     int16_t pet_hp_before = g_snapshot.pet.hp;
     int16_t enemy_hp_before = target->hp;
 
-    float state_before[9];
-    calc_combat_inputs(&g_snapshot.pet, target, state_before, g_last_quality_score);
+    float input_before[9];
+    calc_combat_inputs(&g_snapshot.pet, target, input_before, g_last_quality_score);
+    float state_before[16];
+    memset(state_before, 0, sizeof(state_before));
+    if (inference_engine_is_loaded()) {
+        inference_engine_run(input_before, 9, state_before, 16);
+    }
 
     combat_action_e action = decide_combat_action(&g_snapshot.pet, target);
 
@@ -576,8 +609,13 @@ static void simulate_combat_turn(void)
     int16_t pet_hp_after = g_snapshot.pet.hp;
     int16_t enemy_hp_after = target->hp;
 
-    float state_after[9];
-    calc_combat_inputs(&g_snapshot.pet, target, state_after, g_last_quality_score);
+    float input_after[9];
+    calc_combat_inputs(&g_snapshot.pet, target, input_after, g_last_quality_score);
+    float state_after[16];
+    memset(state_after, 0, sizeof(state_after));
+    if (inference_engine_is_loaded()) {
+        inference_engine_run(input_after, 9, state_after, 16);
+    }
 
     reward_context_t reward_ctx = {
         .damage_dealt = g_snapshot.combat.last_player_damage,
@@ -620,7 +658,7 @@ static void simulate_combat_turn(void)
         g_last_quality_score = 0.0f;
     }
 
-    state_after[8] = g_last_quality_score;
+
 
     experience_logger_log_step(state_before, action_idx, reward, state_after, done);
 
@@ -765,44 +803,45 @@ void game_coordinator_task(void *arg)
 case GS_SEARCHING:
     if (g_search_start_ms == 0) {
         g_search_start_ms = (uint32_t)(esp_timer_get_time() / 1000);
-        g_search_duration_ms = (esp_random() % 5 + 3) * 1000;
+        search_engine_init(&g_snapshot.pet);
         memset(&g_search_result, 0, sizeof(g_search_result));
-        ESP_LOGI(TAG, "Searching started, duration: %lu ms", (unsigned long)g_search_duration_ms);
+        g_search_result.new_data = true;
     }
 
-    uint32_t elapsed_ms = (uint32_t)(esp_timer_get_time() / 1000) - g_search_start_ms;
-    g_search_result.new_data = true;
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    if (now_ms - g_search_start_ms >= 1000) {
+        g_search_start_ms = now_ms;
+        search_engine_tick(&g_snapshot.pet, &g_search_result);
+        if (g_search_result.search_ended) {
+            if (g_search_result.encounter_found) {
+                combat_engine_start_encounter_with_id(&g_snapshot.encounter, g_snapshot.pet.level, g_search_result.detected_enemy_id);
 
-    if (elapsed_ms >= g_search_duration_ms) {
-        combat_engine_start_encounter(&g_snapshot.encounter, g_snapshot.pet.level);
+                ESP_LOGI(TAG, "Encounter spawned: %d enemy(s)", g_snapshot.encounter.count);
 
-        g_snapshot.pet.energy--;
-        g_snapshot.pet.dirty_flags |= PET_DIRTY_ENERGY;
+                uint8_t target_idx = combat_engine_select_first_alive(&g_snapshot.encounter);
+                enemy_t *first_enemy = &g_snapshot.encounter.enemies[target_idx];
+                combat_engine_roll_initiative(&g_snapshot.pet, first_enemy, &g_snapshot.combat);
 
-        g_search_result.search_ended = true;
-g_search_result.encounter_found = true;
-g_search_result.new_data = true;
+                critic_history_init(&g_combat_history, (float)g_snapshot.pet.hp_max, (float)first_enemy->hp_max);
+                g_last_quality_score = 0.0f;
 
-ESP_LOGI(TAG, "Encounter spawned: %d enemy(s)", g_snapshot.encounter.count);
+                memset(&g_combat_result, 0, sizeof(g_combat_result));
+                memset(&g_combat_log, 0, sizeof(g_combat_log));
+                g_combat_active = true;
 
-uint8_t target_idx = combat_engine_select_first_alive(&g_snapshot.encounter);
-enemy_t *first_enemy = &g_snapshot.encounter.enemies[target_idx];
-combat_engine_roll_initiative(&g_snapshot.pet, first_enemy, &g_snapshot.combat);
+                experience_logger_start_episode();
 
-critic_history_init(&g_combat_history, (float)g_snapshot.pet.hp_max, (float)first_enemy->hp_max);
-g_last_quality_score = 0.0f;
+                g_search_start_ms = 0;
+                g_search_duration_ms = 0;
 
-memset(&g_combat_result, 0, sizeof(g_combat_result));
-memset(&g_combat_log, 0, sizeof(g_combat_log));
-g_combat_active = true;
-
-experience_logger_start_episode();
-
-g_search_start_ms = 0;
-g_search_duration_ms = 0;
-
-emit_enemy_spawned_event();
-transition_to(GS_COMBAT);
+                emit_enemy_spawned_event();
+                transition_to(GS_COMBAT);
+            } else {
+                g_search_start_ms = 0;
+                rest_init(&g_snapshot.rest, &g_snapshot.pet);
+                transition_to(GS_RESTING);
+            }
+        }
     } else {
         taskYIELD();
     }
@@ -857,7 +896,7 @@ case GS_TRAINING:
 
     training_mode_update_status("Entrenando modelo...");
 
-    uint8_t num_actions = dna_engine_get_unlocked_actions(&g_snapshot.pet.dna, g_snapshot.pet.level);
+    uint8_t num_actions = 3 + g_snapshot.pet.skill_count;
 
     if (g_policy_head.num_actions == 0) {
         esp_err_t ret = policy_head_init(&g_policy_head, num_actions);
@@ -976,4 +1015,19 @@ break;
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+}
+
+uint32_t game_coordinator_get_trans_for_level(uint8_t level)
+{
+    if (level == 0) return 0;
+    uint32_t transitions_per_level = 500;
+    if (s_intervals_count > 0) {
+        for (int i = 0; i < s_intervals_count; i++) {
+            if (level <= s_intervals[i].max_level) {
+                transitions_per_level = s_intervals[i].transitions_per_level;
+                break;
+            }
+        }
+    }
+    return (uint32_t)level * transitions_per_level;
 }
