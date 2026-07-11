@@ -327,6 +327,8 @@ def main():
             ("features.bin", "/DATA/TABLES/features.bin"),
             ("resources.bin", "/DATA/TABLES/resources.bin"),
             ("damage_progression.bin", "/DATA/TABLES/damage_progression.bin"),
+            ("world_zones.bin", "/DATA/TABLES/world_zones.bin"),
+            ("zone_enemies.bin", "/DATA/TABLES/zone_enemies.bin"),
         ]
         
         print("\n--- Sending binary tables ---")
@@ -358,6 +360,22 @@ def main():
                 return
         else:
             print("Warning: backbone.espdl not found in models dir")
+
+        actor_init_file = os.path.join(models_dir, 'actor_init.bin')
+        if os.path.exists(actor_init_file):
+            if not init.send_file(actor_init_file, "/BRAIN/COMBAT/actor_init.bin"):
+                print("Failed to send actor_init.bin")
+                return
+        else:
+            print("Warning: actor_init.bin not found in models dir")
+
+        value_head_file = os.path.join(models_dir, 'value_head.bin')
+        if os.path.exists(value_head_file):
+            if not init.send_file(value_head_file, "/BRAIN/COMBAT/value_head.bin"):
+                print("Failed to send value_head.bin")
+                return
+        else:
+            print("Warning: value_head.bin not found in models dir")
 
         critic_file = os.path.join(models_dir, 'critic_weights.bin')
         if os.path.exists(critic_file):

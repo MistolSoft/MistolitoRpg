@@ -2,6 +2,7 @@
 #include "game_tables_structs.h"
 #include "rules.h"
 #include "storage_task.h"
+#include "spi_bus.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "cJSON.h"
@@ -21,8 +22,11 @@ bool profession_check_requirements(pet_t *pet, uint8_t profession_id)
         return false;
     }
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/professions.bin", "rb");
     if (!f) {
+        spi_bus_unlock();
         return false;
     }
 
@@ -41,6 +45,9 @@ bool profession_check_requirements(pet_t *pet, uint8_t profession_id)
         }
     }
     fclose(f);
+
+    spi_bus_unlock();
+
     return meets;
 }
 
@@ -60,8 +67,11 @@ bool profession_try_change(pet_t *pet, uint8_t new_profession_id)
         return false;
     }
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/professions.bin", "rb");
     if (!f) {
+        spi_bus_unlock();
         return false;
     }
 
@@ -79,6 +89,8 @@ bool profession_try_change(pet_t *pet, uint8_t new_profession_id)
         }
     }
     fclose(f);
+
+    spi_bus_unlock();
 
     if (!found) {
         return false;
@@ -166,8 +178,11 @@ void profession_get_bonus_stats(pet_t *pet, uint8_t stats[STAT_COUNT], uint8_t *
         return;
     }
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/professions.bin", "rb");
     if (!f) {
+        spi_bus_unlock();
         return;
     }
 
@@ -184,6 +199,8 @@ void profession_get_bonus_stats(pet_t *pet, uint8_t stats[STAT_COUNT], uint8_t *
         }
     }
     fclose(f);
+
+    spi_bus_unlock();
 }
 
 static uint8_t profession_get_dice_count(uint8_t profession_id, uint8_t level)
@@ -203,8 +220,11 @@ void profession_apply_combat_stats(pet_t *pet)
         return;
     }
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/professions.bin", "rb");
     if (!f) {
+        spi_bus_unlock();
         return;
     }
 
@@ -223,6 +243,8 @@ void profession_apply_combat_stats(pet_t *pet)
     }
     fclose(f);
 
+    spi_bus_unlock();
+
     if (found) {
         pet->combat.dice_count = profession_get_dice_count(pet->profession, pet->profession_level);
         ESP_LOGI(TAG, "Dice count updated to %d", pet->combat.dice_count);
@@ -235,8 +257,11 @@ void profession_apply_level_bonuses(pet_t *pet, uint8_t profession_level)
         return;
     }
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/damage_progression.bin", "rb");
     if (!f) {
+        spi_bus_unlock();
         return;
     }
 
@@ -254,4 +279,6 @@ void profession_apply_level_bonuses(pet_t *pet, uint8_t profession_level)
         }
     }
     fclose(f);
+
+    spi_bus_unlock();
 }

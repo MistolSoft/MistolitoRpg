@@ -10,6 +10,7 @@
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "driver/sdspi_host.h"
+#include "esp_heap_caps.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -216,6 +217,11 @@ void storage_task(void *arg)
                     *out_count = 0;
                     ESP_LOGW(TAG, "Chunk %lu not found", (unsigned long)chunk_index);
                 }
+                break;
+            }
+            case STORAGE_OP_WIPE_DATA:
+            {
+                storage_wipe_game_data();
                 break;
             }
             }
@@ -465,13 +471,13 @@ esp_err_t storage_save_file(const char *path, const uint8_t *data, size_t len)
     char dir_path[128];
     strncpy(dir_path, path, sizeof(dir_path) - 1);
 
+    spi_bus_lock();
+
     char *last_slash = strrchr(dir_path, '/');
     if (last_slash) {
         *last_slash = '\0';
         mkdir(dir_path, 0755);
     }
-
-    spi_bus_lock();
 
     FILE *f = fopen(path, "w");
     if (!f) {
@@ -768,10 +774,10 @@ void storage_replay_append(float *state, uint8_t action, float reward, float *ne
 
     storage_request_t req;
     req.operation = STORAGE_OP_REPLAY_APPEND;
-    memcpy(req.replay.transition.state, state, sizeof(float) * 9);
+    memcpy(req.replay.transition.state, state, sizeof(float) * 16);
     req.replay.transition.action = action;
     req.replay.transition.reward = reward;
-    memcpy(req.replay.transition.next_state, next_state, sizeof(float) * 9);
+    memcpy(req.replay.transition.next_state, next_state, sizeof(float) * 16);
     req.replay.transition.done = done;
 
     xQueueSend(g_storage_queue, &req, 0);
@@ -851,4 +857,246 @@ bool storage_replay_check_level_up(uint8_t current_level)
     uint32_t total = storage_replay_get_total();
     uint32_t required = storage_replay_calc_transitions_for_level(current_level);
     return (total >= required);
+}
+
+uint8_t storage_get_zone_by_coords(int16_t x, int16_t y, char *out_zone_name)
+{
+    spi_bus_lock();
+    FILE *f = fopen(MOUNT_POINT "/DATA/TABLES/world_zones.bin", "rb");
+    if (!f) {
+        spi_bus_unlock();
+        if (out_zone_name) strcpy(out_zone_name, "Unknown");
+        return 0;
+    }
+    world_zone_record_t rec;
+    uint8_t zone_id = 0;
+    bool found = false;
+    while (fread(&rec, sizeof(world_zone_record_t), 1, f) == 1) {
+        if (x >= rec.min_x && x <= rec.max_x && y >= rec.min_y && y <= rec.max_y) {
+            zone_id = rec.id;
+            if (out_zone_name) {
+                strncpy(out_zone_name, rec.name, 15);
+                out_zone_name[15] = '\0';
+            }
+            found = true;
+            break;
+        }
+    }
+    fclose(f);
+    spi_bus_unlock();
+    if (!found && out_zone_name) {
+        strcpy(out_zone_name, "Unknown");
+    }
+    return zone_id;
+}
+
+uint8_t storage_get_zone_enemies(uint8_t zone_id, enemy_record_t *out_enemies, uint8_t max_enemies)
+{
+    spi_bus_lock();
+    FILE *f_ze = fopen(MOUNT_POINT "/DATA/TABLES/zone_enemies.bin", "rb");
+    if (!f_ze) {
+        spi_bus_unlock();
+        return 0;
+    }
+    uint8_t enemy_ids[16];
+    uint8_t count = 0;
+    zone_enemy_record_t ze;
+    while (fread(&ze, sizeof(zone_enemy_record_t), 1, f_ze) == 1) {
+        if (ze.zone_id == zone_id) {
+            if (count < 16) {
+                enemy_ids[count++] = ze.enemy_id;
+            }
+        }
+    }
+    fclose(f_ze);
+    if (count == 0) {
+        spi_bus_unlock();
+        return 0;
+    }
+    FILE *f_e = fopen(MOUNT_POINT "/DATA/TABLES/enemies.bin", "rb");
+    if (!f_e) {
+        spi_bus_unlock();
+        return 0;
+    }
+    enemy_record_t rec;
+    uint8_t populated = 0;
+    while (fread(&rec, sizeof(enemy_record_t), 1, f_e) == 1) {
+        for (uint8_t i = 0; i < count; i++) {
+            if (rec.id == enemy_ids[i]) {
+                if (populated < max_enemies) {
+                    out_enemies[populated++] = rec;
+                }
+            }
+        }
+    }
+    fclose(f_e);
+    spi_bus_unlock();
+    return populated;
+}
+
+static int16_t g_cached_cx = -32768;
+static int16_t g_cached_cy = -32768;
+static chunk_t *g_cached_chunk = NULL;
+
+static chunk_t *get_cache(void)
+{
+    if (g_cached_chunk == NULL) {
+        g_cached_chunk = heap_caps_malloc(sizeof(chunk_t), MALLOC_CAP_SPIRAM);
+        if (g_cached_chunk) {
+            memset(g_cached_chunk, 0xFF, sizeof(chunk_t));
+        }
+    }
+    return g_cached_chunk;
+}
+
+bool storage_get_tile(int16_t x, int16_t y, tile_record_t *tile)
+{
+    chunk_t *cache = get_cache();
+    if (!cache) {
+        return false;
+    }
+
+    int16_t cx = (x < 0) ? ((x - 15) / 16) : (x / 16);
+    int16_t cy = (y < 0) ? ((y - 15) / 16) : (y / 16);
+    uint8_t lx = x - (cx * 16);
+    uint8_t ly = y - (cy * 16);
+    uint16_t index = ly * 16 + lx;
+
+    if (cx != g_cached_cx || cy != g_cached_cy) {
+        char path[64];
+        snprintf(path, sizeof(path), MOUNT_POINT "/WORLD/c_%d_%d.bin", cx, cy);
+        spi_bus_lock();
+        FILE *f = fopen(path, "rb");
+        if (f) {
+            fread(cache, sizeof(chunk_t), 1, f);
+            fclose(f);
+            g_cached_cx = cx;
+            g_cached_cy = cy;
+        } else {
+            spi_bus_unlock();
+            return false;
+        }
+        spi_bus_unlock();
+    }
+
+    if (cache->tiles[index].biome_id == 0xFF) {
+        return false;
+    }
+
+    *tile = cache->tiles[index];
+    return true;
+}
+
+bool storage_set_tile(int16_t x, int16_t y, const tile_record_t *tile)
+{
+    chunk_t *cache = get_cache();
+    if (!cache) {
+        return false;
+    }
+
+    int16_t cx = (x < 0) ? ((x - 15) / 16) : (x / 16);
+    int16_t cy = (y < 0) ? ((y - 15) / 16) : (y / 16);
+    uint8_t lx = x - (cx * 16);
+    uint8_t ly = y - (cy * 16);
+    uint16_t index = ly * 16 + lx;
+
+    if (cx != g_cached_cx || cy != g_cached_cy) {
+        char path[64];
+        snprintf(path, sizeof(path), MOUNT_POINT "/WORLD/c_%d_%d.bin", cx, cy);
+        spi_bus_lock();
+        FILE *f = fopen(path, "rb");
+        if (f) {
+            fread(cache, sizeof(chunk_t), 1, f);
+            fclose(f);
+        } else {
+            memset(cache, 0xFF, sizeof(chunk_t));
+        }
+        spi_bus_unlock();
+        g_cached_cx = cx;
+        g_cached_cy = cy;
+    }
+
+    cache->tiles[index] = *tile;
+
+    char path[64];
+    snprintf(path, sizeof(path), MOUNT_POINT "/WORLD/c_%d_%d.bin", cx, cy);
+    spi_bus_lock();
+    mkdir(MOUNT_POINT "/WORLD", 0755);
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        spi_bus_unlock();
+        return false;
+    }
+    fwrite(cache, sizeof(chunk_t), 1, f);
+    fclose(f);
+    spi_bus_unlock();
+    return true;
+}
+
+void storage_wipe_game_data(void)
+{
+    remove(MOUNT_POINT "/BRAIN/PET/pet_data.bin");
+    remove(MOUNT_POINT "/BRAIN/COMBAT/policy_head.bin");
+    remove(MOUNT_POINT "/BRAIN/COMBAT/exploration/counters.bin");
+
+    DIR *d = opendir(MOUNT_POINT "/WORLD");
+    if (d) {
+        struct dirent *de;
+        while ((de = readdir(d)) != NULL) {
+            if (de->d_type == DT_REG) {
+                char filepath[512];
+                snprintf(filepath, sizeof(filepath), MOUNT_POINT "/WORLD/%s", de->d_name);
+                remove(filepath);
+            }
+        }
+        closedir(d);
+    }
+
+    DIR *dr = opendir(MOUNT_POINT "/BRAIN/COMBAT/replay");
+    if (dr) {
+        struct dirent *de;
+        while ((de = readdir(dr)) != NULL) {
+            if (de->d_type == DT_REG) {
+                char filepath[512];
+                snprintf(filepath, sizeof(filepath), MOUNT_POINT "/BRAIN/COMBAT/replay/%s", de->d_name);
+                remove(filepath);
+            }
+        }
+        closedir(dr);
+    }
+
+    DIR *de_dir = opendir(MOUNT_POINT "/BRAIN/COMBAT/episodes");
+    if (de_dir) {
+        struct dirent *de;
+        while ((de = readdir(de_dir)) != NULL) {
+            if (de->d_type == DT_REG) {
+                char filepath[512];
+                snprintf(filepath, sizeof(filepath), MOUNT_POINT "/BRAIN/COMBAT/episodes/%s", de->d_name);
+                remove(filepath);
+            }
+        }
+        closedir(de_dir);
+    }
+
+    DIR *dc_dir = opendir(MOUNT_POINT "/BRAIN/COMBAT/checkpoints");
+    if (dc_dir) {
+        struct dirent *de;
+        while ((de = readdir(dc_dir)) != NULL) {
+            if (de->d_type == DT_REG) {
+                char filepath[512];
+                snprintf(filepath, sizeof(filepath), MOUNT_POINT "/BRAIN/COMBAT/checkpoints/%s", de->d_name);
+                remove(filepath);
+            }
+        }
+        closedir(dc_dir);
+    }
+}
+
+void storage_queue_wipe_game_data(void)
+{
+    if (g_storage_queue == NULL) return;
+    storage_request_t req;
+    req.operation = STORAGE_OP_WIPE_DATA;
+    xQueueSend(g_storage_queue, &req, portMAX_DELAY);
+    vTaskDelay(pdMS_TO_TICKS(500));
 }

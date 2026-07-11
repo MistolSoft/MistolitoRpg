@@ -38,6 +38,7 @@ LV_IMG_DECLARE(stoneCenter);
 
 void sprites_init(void);
 void sprites_set_idle_animation(lv_obj_t *animimg);
+void sprites_set_walk_animation(lv_obj_t *animimg);
 void sprites_set_attack_animation(lv_obj_t *animimg);
 void sprites_set_hit_animation(lv_obj_t *animimg);
 void sprites_set_death_animation(lv_obj_t *animimg);

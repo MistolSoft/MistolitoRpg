@@ -43,20 +43,23 @@ static void handle_usb_commands(void)
     }
 }
 
-static bool check_boot_button(void)
+static int check_boot_button_press(void)
 {
     if (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
         vTaskDelay(pdMS_TO_TICKS(50));
         if (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
-            ESP_LOGI(TAG, "BOOT button pressed");
-
+            int press_time = 0;
             while (gpio_get_level(BOOT_BUTTON_GPIO) == 0) {
-                vTaskDelay(pdMS_TO_TICKS(10));
+                vTaskDelay(pdMS_TO_TICKS(50));
+                press_time += 50;
             }
-            return true;
+            if (press_time >= 600) {
+                return 2;
+            }
+            return 1;
         }
     }
-    return false;
+    return 0;
 }
 
 void display_task_start(void)
@@ -103,6 +106,15 @@ void display_task(void *arg)
         ESP_LOGI(TAG, "Missing files: %s", missing);
     }
 
+    bool has_save = storage_file_exists("/sdcard/BRAIN/PET/pet_data.bin");
+    int selection = has_save ? 0 : 1;
+
+    if (has_save) {
+        screens_set_init_hint("> CONTINUE WORLD\n  NEW GAME");
+    } else {
+        screens_set_init_hint("> NEW GAME");
+    }
+
     ESP_LOGI(TAG, "Waiting for START_LOOP command or BOOT button...");
 
     while (!game_started) {
@@ -116,9 +128,23 @@ void display_task(void *arg)
             }
         }
 
-        if (check_boot_button()) {
+        int press = check_boot_button_press();
+        if (press == 1) {
+            if (has_save) {
+                selection = 1 - selection;
+                if (selection == 0) {
+                    screens_set_init_hint("> CONTINUE WORLD\n  NEW GAME");
+                } else {
+                    screens_set_init_hint("  CONTINUE WORLD\n> NEW GAME");
+                }
+            }
+        } else if (press == 2) {
             if (usb_check_required_files()) {
-                ESP_LOGI(TAG, "All files present, starting game...");
+                if (selection == 1 && has_save) {
+                    ESP_LOGI(TAG, "Wiping save data for new game...");
+                    storage_queue_wipe_game_data();
+                }
+                ESP_LOGI(TAG, "Starting game...");
                 game_started = true;
                 break;
             } else {
@@ -154,9 +180,15 @@ void display_task(void *arg)
         game_snapshot_t *snap = game_coordinator_get_snapshot();
         if (snap) {
             SemaphoreHandle_t mutex = game_coordinator_get_mutex();
+            game_snapshot_t local_snap;
+            bool got_snap = false;
             if (mutex && xSemaphoreTake(mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-                screens_update(snap);
+                memcpy(&local_snap, snap, sizeof(game_snapshot_t));
                 xSemaphoreGive(mutex);
+                got_snap = true;
+            }
+            if (got_snap) {
+                screens_update(&local_snap);
             }
         }
 

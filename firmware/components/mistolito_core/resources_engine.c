@@ -43,23 +43,30 @@ void resources_apply_level(pet_t *pet, uint8_t profession_level)
         return;
     }
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/resources.bin", "rb");
     if (!f) {
         ESP_LOGW(TAG, "resources.bin not found");
+        spi_bus_unlock();
         return;
     }
 
     if (fseek(f, (profession_level - 1) * sizeof(resource_record_t), SEEK_SET) != 0) {
         fclose(f);
+        spi_bus_unlock();
         return;
     }
 
     resource_record_t rec;
     if (fread(&rec, sizeof(resource_record_t), 1, f) != 1) {
         fclose(f);
+        spi_bus_unlock();
         return;
     }
     fclose(f);
+
+    spi_bus_unlock();
 
     switch (pet->profession) {
         case PROF_WARRIOR:

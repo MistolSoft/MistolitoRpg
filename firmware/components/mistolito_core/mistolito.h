@@ -206,6 +206,8 @@ uint8_t sneak_attack_dice;
 uint8_t arcane_recovery_used;
 uint8_t ability_points;
     uint8_t ability_points_max;
+    int16_t world_x;
+    int16_t world_y;
     uint16_t dirty_flags;
 bool is_alive;
 } pet_t;
@@ -277,6 +279,7 @@ typedef struct {
     bool search_ended;
     bool encounter_found;
     bool new_data;
+    uint8_t detected_enemy_id;
 } search_frame_result_t;
 
 typedef struct {

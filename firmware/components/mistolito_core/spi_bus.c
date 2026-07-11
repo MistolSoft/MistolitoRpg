@@ -8,7 +8,7 @@ static SemaphoreHandle_t spi_mutex = NULL;
 void spi_bus_mutex_init(void)
 {
     if (spi_mutex == NULL) {
-        spi_mutex = xSemaphoreCreateMutex();
+        spi_mutex = xSemaphoreCreateRecursiveMutex();
         ESP_LOGI(TAG, "SPI bus mutex created");
     }
 }
@@ -16,14 +16,14 @@ void spi_bus_mutex_init(void)
 void spi_bus_lock(void)
 {
     if (spi_mutex) {
-        xSemaphoreTake(spi_mutex, portMAX_DELAY);
+        xSemaphoreTakeRecursive(spi_mutex, portMAX_DELAY);
     }
 }
 
 void spi_bus_unlock(void)
 {
     if (spi_mutex) {
-        xSemaphoreGive(spi_mutex);
+        xSemaphoreGiveRecursive(spi_mutex);
     }
 }
 

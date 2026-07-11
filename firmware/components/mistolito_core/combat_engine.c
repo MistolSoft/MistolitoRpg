@@ -182,6 +182,26 @@ void combat_engine_start_encounter(encounter_t *encounter, uint8_t pet_level)
     encounter->active_idx = 0;
 }
 
+void combat_engine_start_encounter_with_id(encounter_t *encounter, uint8_t pet_level, uint8_t enemy_id)
+{
+    memset(encounter, 0, sizeof(encounter_t));
+    encounter->count = 1;
+    enemy_t *enemy = &encounter->enemies[0];
+    if (!storage_get_enemy_data(enemy_id, pet_level, enemy)) {
+        enemy->hp_max = 20 + pet_level * 10;
+        enemy->hp = enemy->hp_max;
+        enemy->ac = 8 + (pet_level / 5);
+        enemy->damage_dice = 4;
+        enemy->damage_bonus = 0;
+        enemy->attack_bonus = 2;
+        enemy->exp_reward = 15 + pet_level * 5;
+        strncpy(enemy->name, "Unknown", ENEMY_NAME_MAX_LEN - 1);
+        enemy->level = pet_level;
+        enemy->alive = true;
+    }
+    encounter->active_idx = 0;
+}
+
 uint16_t combat_engine_calc_enemy_hp(uint8_t pet_level)
 {
     uint16_t base_hp = 30;
@@ -532,8 +552,11 @@ void combat_engine_reset_pet_on_death(pet_t *pet)
     pet->energy = MAX_ENERGY;
     pet->energy_max = MAX_ENERGY;
     pet->profession = PROF_NONE;
+    pet->world_x = (int16_t)((esp_random() % 401) - 200);
+    pet->world_y = (int16_t)((esp_random() % 401) - 200);
     pet->is_alive = true;
 
-    ESP_LOGI(TAG, "Pet resurrected: %s (DP=%lu) STR=%d DEX=%d CON=%d INT=%d WIS=%d CHA=%d",
-        pet->name, (unsigned long)pet->dp, pet->str, pet->dex, pet->con, pet->intel, pet->wis, pet->cha);
+    ESP_LOGI(TAG, "Pet resurrected: %s (DP=%lu) STR=%d DEX=%d CON=%d INT=%d WIS=%d CHA=%d at (%d,%d)",
+        pet->name, (unsigned long)pet->dp, pet->str, pet->dex, pet->con, pet->intel, pet->wis, pet->cha,
+        pet->world_x, pet->world_y);
 }

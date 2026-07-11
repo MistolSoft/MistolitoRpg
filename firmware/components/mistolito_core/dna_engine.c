@@ -184,6 +184,11 @@ void dna_derive_intent_unlock(dna_t *dna)
     }
 
     for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
+        if (i == 0 || i == 1 || i == 5) {
+            dna->intent_unlock[i] = 1;
+            continue;
+        }
+
         uint8_t h = dna->hash[i * 4 + 3];
         uint8_t roll = (h % 20) + 1;
 
@@ -197,22 +202,6 @@ void dna_derive_intent_unlock(dna_t *dna)
             dna->intent_unlock[i] = 5;
         } else {
             dna->intent_unlock[i] = 8;
-        }
-    }
-
-    uint8_t initial_count = 0;
-    for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
-        if (dna->intent_unlock[i] == 1) {
-            initial_count++;
-        }
-    }
-
-    if (initial_count < 2) {
-        for (uint8_t i = 0; i < DNA_STAT_COUNT && initial_count < 2; i++) {
-            if (dna->intent_unlock[i] == 0) {
-                dna->intent_unlock[i] = 1;
-                initial_count++;
-            }
         }
     }
 

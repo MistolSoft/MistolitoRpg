@@ -78,9 +78,12 @@ uint8_t features_get_available(pet_t *pet, uint8_t profession_level, feature_can
         return 0;
     }
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/features.bin", "rb");
     if (!f) {
         ESP_LOGW(TAG, "features.bin not found");
+        spi_bus_unlock();
         return 0;
     }
 
@@ -103,6 +106,9 @@ uint8_t features_get_available(pet_t *pet, uint8_t profession_level, feature_can
         }
     }
     fclose(f);
+
+    spi_bus_unlock();
+
     return count;
 }
 
@@ -117,6 +123,8 @@ bool features_try_learn(pet_t *pet, feature_candidate_t *candidate)
                  candidate->name, pet->dp, candidate->dp_cost);
         return false;
     }
+
+    spi_bus_lock();
 
     uint8_t roll = roll_d20();
     bool success = (roll >= candidate->success_dc);
@@ -166,10 +174,12 @@ bool features_try_learn(pet_t *pet, feature_candidate_t *candidate)
             }
         }
 
+        spi_bus_unlock();
         return learned;
     } else {
         ESP_LOGI(TAG, "Failed to learn %s (roll=%d, DC=%d), DP consumed", 
                  candidate->name, roll, candidate->success_dc);
+        spi_bus_unlock();
         return false;
     }
 }

@@ -24,22 +24,30 @@ static const char *TAG = "LCD_INIT";
 static esp_lcd_panel_handle_t lcd_panel = NULL;
 static esp_lcd_panel_io_handle_t lcd_io = NULL;
 static lv_display_t *display = NULL;
+static SemaphoreHandle_t lcd_flush_sem = NULL;
 
 static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
+    BaseType_t high_task_awoken = pdFALSE;
+    if (lcd_flush_sem) {
+        xSemaphoreGiveFromISR(lcd_flush_sem, &high_task_awoken);
+    }
     if (display) {
         lv_display_flush_ready(display);
     }
-    return false;
+    return high_task_awoken == pdTRUE;
 }
 
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    int offsetx1 = area->x1;
-    int offsetx2 = area->x2;
-    int offsety1 = area->y1;
-    int offsety2 = area->y2;
-    esp_lcd_panel_draw_bitmap(lcd_panel, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, px_map);
+    uint32_t pixel_count = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
+    lv_draw_sw_rgb565_swap(px_map, pixel_count);
+    spi_bus_lock();
+    esp_lcd_panel_draw_bitmap(lcd_panel, area->x1, area->y1, area->x2 + 1, area->y2 + 1, px_map);
+    if (lcd_flush_sem) {
+        xSemaphoreTake(lcd_flush_sem, portMAX_DELAY);
+    }
+    spi_bus_unlock();
 }
 
 static void lvgl_tick_cb(void *arg)
@@ -106,6 +114,10 @@ esp_err_t lcd_hardware_init(void)
 
 esp_err_t lvgl_display_init(void)
 {
+    if (lcd_flush_sem == NULL) {
+        lcd_flush_sem = xSemaphoreCreateBinary();
+    }
+
     lv_init();
 
     size_t buf_size = LCD_WIDTH * 10 * sizeof(lv_color_t);

@@ -110,7 +110,7 @@ def compile_enemies(json_dir, out_dir):
             name_padded = name_bytes + b"\x00" * (16 - len(name_bytes))
             
             packed = struct.pack(
-                "<B16sBBBBBBBBBHH",
+                "<B16sBBBBBBBBBHHB",
                 e["id"],
                 name_padded,
                 e["tier"],
@@ -123,7 +123,8 @@ def compile_enemies(json_dir, out_dir):
                 e["damage_per_level"],
                 e["attack_bonus"],
                 e["exp_base"],
-                e["exp_per_level"]
+                e["exp_per_level"],
+                e.get("detect_dc", 10)
             )
             f_out.write(packed)
             
@@ -411,6 +412,37 @@ def compile_dna(json_dir, out_dir):
     with open(os.path.join(out_dir, "pet_dna.bin"), "wb") as f_out:
         f_out.write(packed)
 
+def compile_zones(json_dir, out_dir):
+    enemy_path = os.path.join(json_dir, "tables", "enemies.json")
+    with open(enemy_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    zones = data.get("world_zones", [])
+    zone_enemies = data.get("zone_enemies", [])
+    
+    with open(os.path.join(out_dir, "world_zones.bin"), "wb") as f_out:
+        for z in zones:
+            name_bytes = z["name"].encode("utf-8")[:15]
+            name_padded = name_bytes + b"\x00" * (16 - len(name_bytes))
+            packed = struct.pack(
+                "<B16shhhh",
+                z["id"],
+                name_padded,
+                z["min_x"],
+                z["max_x"],
+                z["min_y"],
+                z["max_y"]
+            )
+            f_out.write(packed)
+            
+    with open(os.path.join(out_dir, "zone_enemies.bin"), "wb") as f_out:
+        for ze in zone_enemies:
+            packed = struct.pack(
+                "<BB",
+                ze["zone_id"],
+                ze["enemy_id"]
+            )
+            f_out.write(packed)
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(script_dir)
@@ -430,6 +462,7 @@ def main():
     compile_resources(json_dir, out_dir)
     compile_damage_progression(json_dir, out_dir)
     compile_dna(json_dir, out_dir)
+    compile_zones(json_dir, out_dir)
     print("Compilation completed successfully! Binaries written to:", out_dir)
 
 if __name__ == "__main__":

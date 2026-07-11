@@ -1,6 +1,7 @@
 #include "spell_engine.h"
 #include "game_tables_structs.h"
 #include "storage_task.h"
+#include "spi_bus.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include <string.h>
@@ -50,9 +51,12 @@ uint8_t spells_get_available(pet_t *pet, spell_candidate_t *candidates, uint8_t 
     uint8_t count = 0;
     uint8_t max_level = get_max_spell_level(pet);
 
+    spi_bus_lock();
+
     FILE *f = fopen("/sdcard/DATA/TABLES/spells.bin", "rb");
     if (!f) {
         ESP_LOGW(TAG, "spells.bin not found");
+        spi_bus_unlock();
         return 0;
     }
 
@@ -76,6 +80,9 @@ uint8_t spells_get_available(pet_t *pet, spell_candidate_t *candidates, uint8_t 
         }
     }
     fclose(f);
+
+    spi_bus_unlock();
+
     return count;
 }
 

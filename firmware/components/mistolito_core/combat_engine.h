@@ -7,6 +7,7 @@
 
 void combat_engine_init(combat_state_t *combat);
 void combat_engine_start_encounter(encounter_t *encounter, uint8_t pet_level);
+void combat_engine_start_encounter_with_id(encounter_t *encounter, uint8_t pet_level, uint8_t enemy_id);
 void combat_engine_roll_initiative(pet_t *pet, enemy_t *enemy, combat_state_t *combat);
 bool combat_engine_saving_throw(pet_t *pet, uint8_t save_type, uint8_t dc);
 bool combat_engine_enemy_saving_throw(enemy_t *enemy, uint8_t save_type, uint8_t dc);

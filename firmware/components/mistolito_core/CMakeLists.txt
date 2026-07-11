@@ -28,10 +28,15 @@ set(SPRITE_ENEMY_SRCS
     ${CMAKE_SOURCE_DIR}/assets/spirites/enemys/pokerSad.c
 )
 
+set(TILE_SRCS
+    ${CMAKE_SOURCE_DIR}/assets/Tiles/c/grassMid.c
+)
+
 idf_component_register(
 SRCS
 "events.c"
 "game_coordinator.c"
+"search_engine.c"
 "workers.c"
 "storage_task.c"
 "display_task.c"
@@ -60,8 +65,10 @@ SRCS
 "critic_features.c"
 "critic_model.c"
 "policy_head.c"
+"value_head.c"
 ${SPRITE_PLAYER_SRCS}
 ${SPRITE_ENEMY_SRCS}
+${TILE_SRCS}
 INCLUDE_DIRS "."
 REQUIRES mbedtls
 PRIV_REQUIRES esp_lcd spi_flash sdmmc fatfs freertos driver esp_timer cjson lvgl esp_driver_usb_serial_jtag inference_engine

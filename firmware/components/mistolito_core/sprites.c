@@ -1,4 +1,5 @@
 #include "sprites.h"
+#include "ui_colors.h"
 #include "esp_log.h"
 
 static const char *TAG = "SPRITES";
@@ -8,6 +9,15 @@ static lv_image_dsc_t *idle_frames[] = {
     (lv_image_dsc_t *)&p1_walk02,
     (lv_image_dsc_t *)&p1_walk03,
     (lv_image_dsc_t *)&p1_walk04,
+};
+
+static lv_image_dsc_t *walk_frames[] = {
+    (lv_image_dsc_t *)&p1_walk01,
+    (lv_image_dsc_t *)&p1_walk02,
+    (lv_image_dsc_t *)&p1_walk03,
+    (lv_image_dsc_t *)&p1_walk04,
+    (lv_image_dsc_t *)&p1_walk05,
+    (lv_image_dsc_t *)&p1_walk06,
 };
 
 static lv_image_dsc_t *attack_frames[] = {
@@ -69,6 +79,16 @@ void sprites_set_idle_animation(lv_obj_t *animimg)
     lv_anim_del(animimg, NULL);
     lv_animimg_set_src(animimg, (const void **)idle_frames, 4);
     lv_animimg_set_duration(animimg, 800);
+    lv_animimg_set_repeat_count(animimg, LV_ANIM_REPEAT_INFINITE);
+    lv_animimg_start(animimg);
+}
+
+void sprites_set_walk_animation(lv_obj_t *animimg)
+{
+    if (!animimg) return;
+    lv_anim_del(animimg, NULL);
+    lv_animimg_set_src(animimg, (const void **)walk_frames, 6);
+    lv_animimg_set_duration(animimg, 600);
     lv_animimg_set_repeat_count(animimg, LV_ANIM_REPEAT_INFINITE);
     lv_animimg_start(animimg);
 }
@@ -168,5 +188,5 @@ void sprites_stop_animation(lv_obj_t *animimg)
 void sprites_create_arena_background(lv_obj_t *parent)
 {
     if (!parent) return;
-    lv_obj_set_style_bg_color(parent, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_color(parent, lv_color_hex(COLOR_BLACK), 0);
 }

@@ -18,6 +18,7 @@ void game_coordinator_clear_search_result(void);
 rest_frame_result_t* game_coordinator_get_rest_result(void);
 void game_coordinator_clear_rest_result(void);
 void game_coordinator_task(void *arg);
+uint32_t game_coordinator_get_trans_for_level(uint8_t level);
 
 extern TaskHandle_t g_coordinator_task_handle;
 
