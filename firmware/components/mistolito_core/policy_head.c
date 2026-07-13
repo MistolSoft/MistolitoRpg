@@ -109,10 +109,10 @@ esp_err_t policy_head_expand(policy_head_t *ph, uint8_t new_num_actions)
     return ESP_OK;
 }
 
-esp_err_t policy_head_save(const policy_head_t *ph, uint32_t epoch)
+esp_err_t policy_head_save(const policy_head_t *ph, uint32_t epoch, const char *path)
 {
     spi_bus_lock();
-    FILE *f = fopen(POLICY_HEAD_PATH, "wb");
+    FILE *f = fopen(path, "wb");
     if (!f) {
         spi_bus_unlock();
         return ESP_FAIL;
@@ -132,18 +132,18 @@ esp_err_t policy_head_save(const policy_head_t *ph, uint32_t epoch)
     fclose(f);
     spi_bus_unlock();
 
-    ESP_LOGI(TAG, "Saved policy head (epoch=%lu, actions=%d)", (unsigned long)epoch, ph->num_actions);
+    ESP_LOGI(TAG, "Saved policy head (epoch=%lu, actions=%d, path=%s)", (unsigned long)epoch, ph->num_actions, path);
     return ESP_OK;
 }
 
-esp_err_t policy_head_load(policy_head_t *ph)
+esp_err_t policy_head_load(policy_head_t *ph, const char *path, const char *init_path)
 {
     spi_bus_lock();
-    FILE *f = fopen(POLICY_HEAD_PATH, "rb");
+    FILE *f = fopen(path, "rb");
     if (!f) {
         spi_bus_unlock();
         ESP_LOGW(TAG, "No policy head saved, using init weights");
-        return policy_head_load_init(ph, ph->num_actions);
+        return policy_head_load_init(ph, ph->num_actions, init_path);
     }
 
     policy_head_meta_t meta;
@@ -153,7 +153,7 @@ esp_err_t policy_head_load(policy_head_t *ph)
         fclose(f);
         spi_bus_unlock();
         ESP_LOGW(TAG, "Invalid policy head magic, using init weights");
-        return policy_head_load_init(ph, ph->num_actions);
+        return policy_head_load_init(ph, ph->num_actions, init_path);
     }
 
     uint8_t file_actions = meta.num_actions;
@@ -174,13 +174,13 @@ esp_err_t policy_head_load(policy_head_t *ph)
     return ESP_OK;
 }
 
-esp_err_t policy_head_load_init(policy_head_t *ph, uint8_t num_actions)
+esp_err_t policy_head_load_init(policy_head_t *ph, uint8_t num_actions, const char *init_path)
 {
     spi_bus_lock();
-    FILE *f = fopen(POLICY_HEAD_INIT_PATH, "rb");
+    FILE *f = fopen(init_path, "rb");
     if (!f) {
         spi_bus_unlock();
-        ESP_LOGW(TAG, "No init weights found at %s", POLICY_HEAD_INIT_PATH);
+        ESP_LOGW(TAG, "No init weights found at %s", init_path);
         return ESP_ERR_NOT_FOUND;
     }
 

@@ -61,8 +61,10 @@ void experience_logger_end_episode(bool victory, uint8_t enemy_level)
 
     g_total_episodes++;
 
-    char path[64];
-    snprintf(path, sizeof(path), EPISODES_DIR "/ep_%05lu.bin", (unsigned long)g_total_episodes);
+    char ep_dir[64];
+    storage_get_episodes_dir(ep_dir, sizeof(ep_dir));
+    char path[128];
+    snprintf(path, sizeof(path), "%s/ep_%05lu.bin", ep_dir, (unsigned long)g_total_episodes);
 
     spi_bus_lock();
 

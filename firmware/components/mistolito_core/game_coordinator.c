@@ -141,6 +141,49 @@ static void transition_to(game_state_e new_state)
     ESP_LOGI(TAG, "State transition: %d", new_state);
 }
 
+static const char *g_loaded_model_type = NULL;
+
+static void load_core_model(void)
+{
+    storage_set_active_brain_context(BRAIN_CTX_CORE);
+    if (g_loaded_model_type != NULL && strcmp(g_loaded_model_type, "core") == 0) {
+        return;
+    }
+    ESP_LOGI(TAG, "Loading core model...");
+    spi_bus_lock();
+    esp_err_t ret = inference_engine_load_model("/sdcard/models/core/backbone.espdl");
+    if (ret == ESP_OK) {
+        policy_head_deinit(&g_policy_head);
+        policy_head_init(&g_policy_head, 4);
+        policy_head_load(&g_policy_head, "/sdcard/models/core/policy_head.bin", "/sdcard/models/core/actor_init.bin");
+        g_loaded_model_type = "core";
+    } else {
+        ESP_LOGE(TAG, "Failed to load core model: %s", esp_err_to_name(ret));
+    }
+    spi_bus_unlock();
+}
+
+static void load_combat_model(void)
+{
+    storage_set_active_brain_context(BRAIN_CTX_COMBAT);
+    if (g_loaded_model_type != NULL && strcmp(g_loaded_model_type, "combat") == 0) {
+        return;
+    }
+    ESP_LOGI(TAG, "Loading combat model...");
+    spi_bus_lock();
+    esp_err_t ret = inference_engine_load_model("/sdcard/models/combat/backbone.espdl");
+    if (ret == ESP_OK) {
+        policy_head_deinit(&g_policy_head);
+        uint8_t num_combat_actions = 3 + g_snapshot.pet.skill_count;
+        policy_head_init(&g_policy_head, num_combat_actions);
+        policy_head_load(&g_policy_head, "/sdcard/models/combat/policy_head.bin", "/sdcard/models/combat/actor_init.bin");
+        g_loaded_model_type = "combat";
+    } else {
+        ESP_LOGE(TAG, "Failed to load combat model: %s", esp_err_to_name(ret));
+    }
+    spi_bus_unlock();
+}
+
 static void emit_level_up_event(uint8_t level)
 {
     game_event_t evt = { .type = EVT_LEVEL_UP, .data.level_up.level = level };
@@ -167,9 +210,9 @@ void game_coordinator_start(void)
     critic_model_load(&g_critic_model);
     critic_history_init(&g_combat_history, 1.0f, 1.0f);
 
-    uint8_t initial_actions = 3 + g_snapshot.pet.skill_count;
-    policy_head_init(&g_policy_head, initial_actions);
-    policy_head_load(&g_policy_head);
+    g_policy_head.W = NULL;
+    g_policy_head.b = NULL;
+    g_policy_head.num_actions = 0;
 
     memset(&g_snapshot, 0, sizeof(g_snapshot));
     memset(&g_combat_result, 0, sizeof(g_combat_result));
@@ -768,6 +811,8 @@ void game_coordinator_task(void *arg)
                         storage_apply_profession_data(&g_snapshot.pet, PROF_NONE);
                         g_snapshot.pet.exp_next = calc_exp_for_level(1);
                         g_snapshot.pet.is_alive = true;
+                        g_snapshot.pet.world_x = (int16_t)((esp_random() % 401) - 200);
+                        g_snapshot.pet.world_y = (int16_t)((esp_random() % 401) - 200);
                         g_snapshot.pet.dirty_flags = 0xFF;
                         storage_save_pet_delta(g_snapshot.pet.dirty_flags, &g_snapshot.pet);
                         g_snapshot.pet.dirty_flags = 0;
@@ -787,20 +832,12 @@ void game_coordinator_task(void *arg)
             transition_to(GS_RESTING);
         }
 
-        if (!inference_engine_is_loaded()) {
-            spi_bus_lock();
-            esp_err_t ret = inference_engine_load_model("/sdcard/MODELS/backbone.espdl");
-            spi_bus_unlock();
-            if (ret != ESP_OK) {
-                ESP_LOGW(TAG, "Combat model not loaded, using fallback logic: %s", esp_err_to_name(ret));
-            }
-        }
-
         storage_replay_init();
     }
     break;
 
 case GS_SEARCHING:
+    load_core_model();
     if (g_search_start_ms == 0) {
         g_search_start_ms = (uint32_t)(esp_timer_get_time() / 1000);
         search_engine_init(&g_snapshot.pet);
@@ -848,6 +885,7 @@ case GS_SEARCHING:
     break;
 
             case GS_COMBAT:
+                load_combat_model();
                 if (g_snapshot.combat.fled) {
                     ESP_LOGD(TAG, "GS_COMBAT: flee branch (pet_alive=%d)", g_snapshot.pet.is_alive);
                     experience_logger_end_episode(false, g_snapshot.encounter.enemies[0].level);
@@ -898,15 +936,7 @@ case GS_TRAINING:
 
     uint8_t num_actions = 3 + g_snapshot.pet.skill_count;
 
-    if (g_policy_head.num_actions == 0) {
-        esp_err_t ret = policy_head_init(&g_policy_head, num_actions);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Policy head init failed: %s", esp_err_to_name(ret));
-            transition_to(GS_SEARCHING);
-            break;
-        }
-        policy_head_load(&g_policy_head);
-    }
+    load_combat_model();
 
     if (num_actions > g_policy_head.num_actions) {
         ESP_LOGI(TAG, "Expanding policy head: %d -> %d actions",
@@ -928,7 +958,7 @@ case GS_TRAINING:
         ppo_find_latest_checkpoint(&next_epoch);
         ppo_save_checkpoint(&g_policy_head, next_epoch + 1, progress.loss);
 
-        policy_head_save(&g_policy_head, next_epoch + 1);
+        policy_head_save(&g_policy_head, next_epoch + 1, "/sdcard/models/combat/policy_head.bin");
 
         process_level_up();
         ESP_LOGI(TAG, "Level up! Pet is now level %d", g_snapshot.pet.level);

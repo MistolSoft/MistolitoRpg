@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <dirent.h>
+#include <unistd.h>
 
 static const char *TAG = "STORAGE";
 
@@ -28,15 +29,55 @@ static const char *TAG = "STORAGE";
 
 QueueHandle_t g_storage_queue = NULL;
 static bool g_mounted = false;
+static brain_context_e s_active_context = BRAIN_CTX_COMBAT;
 
 static void replay_build_paths(void);
 
 static replay_header_t g_replay_header;
 static bool g_replay_initialized = false;
 static uint8_t g_replay_num_actions = 0;
-static char g_replay_dir[64];
-static char g_replay_header_path[80];
-static char g_replay_data_dir[64];
+static char g_replay_dir[96];
+static char g_replay_header_path[128];
+static char g_replay_data_dir[96];
+
+void storage_set_active_brain_context(brain_context_e ctx)
+{
+    if (ctx < BRAIN_CTX_COUNT) {
+        s_active_context = ctx;
+    }
+}
+
+brain_context_e storage_get_active_brain_context(void)
+{
+    return s_active_context;
+}
+
+void storage_get_replay_dir(char *out_path, size_t max_len)
+{
+    if (s_active_context == BRAIN_CTX_CORE) {
+        snprintf(out_path, max_len, MOUNT_POINT "/BRAIN/CORE/replay");
+    } else {
+        snprintf(out_path, max_len, MOUNT_POINT "/BRAIN/COMBAT/replay");
+    }
+}
+
+void storage_get_episodes_dir(char *out_path, size_t max_len)
+{
+    if (s_active_context == BRAIN_CTX_CORE) {
+        snprintf(out_path, max_len, MOUNT_POINT "/BRAIN/CORE/episodes");
+    } else {
+        snprintf(out_path, max_len, MOUNT_POINT "/BRAIN/COMBAT/episodes");
+    }
+}
+
+void storage_get_checkpoints_dir(char *out_path, size_t max_len)
+{
+    if (s_active_context == BRAIN_CTX_CORE) {
+        snprintf(out_path, max_len, MOUNT_POINT "/BRAIN/CORE/checkpoints");
+    } else {
+        snprintf(out_path, max_len, MOUNT_POINT "/BRAIN/COMBAT/checkpoints");
+    }
+}
 
 void storage_task_start(void)
 {
@@ -120,9 +161,17 @@ void storage_task(void *arg)
             case STORAGE_OP_REPLAY_INIT:
             {
                 mkdir(g_replay_dir, 0755);
-                mkdir(EPISODES_DIR, 0755);
-                mkdir(CHECKPOINTS_DIR, 0755);
-                mkdir(EXPLORATION_DIR, 0755);
+                char ep_dir[64];
+                storage_get_episodes_dir(ep_dir, sizeof(ep_dir));
+                mkdir(ep_dir, 0755);
+
+                char cp_dir[64];
+                storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
+                mkdir(cp_dir, 0755);
+
+                if (s_active_context == BRAIN_CTX_COMBAT) {
+                    mkdir(MOUNT_POINT "/BRAIN/COMBAT/exploration", 0755);
+                }
 
                 FILE *f = fopen(g_replay_header_path, "rb");
                 if (f) {
@@ -578,7 +627,9 @@ void storage_derive_dna_stats(dna_t *dna)
 
 static void replay_build_paths(void)
 {
-    snprintf(g_replay_dir, sizeof(g_replay_dir), REPLAY_BASE_DIR "_a%u", g_replay_num_actions);
+    char base_dir[64];
+    storage_get_replay_dir(base_dir, sizeof(base_dir));
+    snprintf(g_replay_dir, sizeof(g_replay_dir), "%s_a%u", base_dir, g_replay_num_actions);
     snprintf(g_replay_header_path, sizeof(g_replay_header_path), "%s/header.bin", g_replay_dir);
 }
 
@@ -596,11 +647,29 @@ void storage_replay_init(void)
     spi_bus_lock();
 
     mkdir(MOUNT_POINT "/BRAIN", 0755);
-    mkdir(MOUNT_POINT "/BRAIN/COMBAT", 0755);
-    mkdir(REPLAY_BASE_DIR "_a1", 0755);
-    mkdir(EPISODES_DIR, 0755);
-    mkdir(CHECKPOINTS_DIR, 0755);
-    mkdir(EXPLORATION_DIR, 0755);
+    if (s_active_context == BRAIN_CTX_CORE) {
+        mkdir(MOUNT_POINT "/BRAIN/CORE", 0755);
+    } else {
+        mkdir(MOUNT_POINT "/BRAIN/COMBAT", 0755);
+    }
+
+    char rep_dir[64];
+    storage_get_replay_dir(rep_dir, sizeof(rep_dir));
+    char a1_dir[80];
+    snprintf(a1_dir, sizeof(a1_dir), "%s_a1", rep_dir);
+    mkdir(a1_dir, 0755);
+
+    char ep_dir[64];
+    storage_get_episodes_dir(ep_dir, sizeof(ep_dir));
+    mkdir(ep_dir, 0755);
+
+    char cp_dir[64];
+    storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
+    mkdir(cp_dir, 0755);
+
+    if (s_active_context == BRAIN_CTX_COMBAT) {
+        mkdir(MOUNT_POINT "/BRAIN/COMBAT/exploration", 0755);
+    }
 
     replay_build_paths();
     mkdir(g_replay_dir, 0755);
@@ -628,7 +697,7 @@ void storage_replay_init(void)
     } else {
         for (uint8_t a = 1; a <= 10; a++) {
             char test_path[80];
-            snprintf(test_path, sizeof(test_path), REPLAY_BASE_DIR "_a%u/header.bin", a);
+            snprintf(test_path, sizeof(test_path), "%s_a%u/header.bin", rep_dir, a);
             FILE *tf = fopen(test_path, "rb");
             if (tf) {
                 fread(&g_replay_header, sizeof(replay_header_t), 1, tf);
@@ -747,15 +816,18 @@ void storage_checkpoints_reset(void)
 
     ESP_LOGI(TAG, "Resetting checkpoints...");
 
+    char cp_dir[64];
+    storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
+
     spi_bus_lock();
 
-    DIR *dir = opendir(CHECKPOINTS_DIR);
+    DIR *dir = opendir(cp_dir);
     if (dir) {
         struct dirent *ent;
         while ((ent = readdir(dir)) != NULL) {
             if (ent->d_name[0] == '.') continue;
             char filepath[300];
-            int len = snprintf(filepath, sizeof(filepath), CHECKPOINTS_DIR "/%s", ent->d_name);
+            int len = snprintf(filepath, sizeof(filepath), "%s/%s", cp_dir, ent->d_name);
             if (len > 0 && len < (int)sizeof(filepath)) {
                 remove(filepath);
             }
@@ -1033,63 +1105,32 @@ bool storage_set_tile(int16_t x, int16_t y, const tile_record_t *tile)
     return true;
 }
 
+static void wipe_directory_recursive(const char *dir_path)
+{
+    DIR *d = opendir(dir_path);
+    if (!d) return;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.') continue;
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s/%s", dir_path, de->d_name);
+        if (de->d_type == DT_DIR) {
+            wipe_directory_recursive(filepath);
+            rmdir(filepath);
+        } else if (de->d_type == DT_REG) {
+            remove(filepath);
+        }
+    }
+    closedir(d);
+}
+
 void storage_wipe_game_data(void)
 {
     remove(MOUNT_POINT "/BRAIN/PET/pet_data.bin");
-    remove(MOUNT_POINT "/BRAIN/COMBAT/policy_head.bin");
-    remove(MOUNT_POINT "/BRAIN/COMBAT/exploration/counters.bin");
+    remove(MOUNT_POINT "/models/combat/policy_head.bin");
+    remove(MOUNT_POINT "/models/core/policy_head.bin");
 
-    DIR *d = opendir(MOUNT_POINT "/WORLD");
-    if (d) {
-        struct dirent *de;
-        while ((de = readdir(d)) != NULL) {
-            if (de->d_type == DT_REG) {
-                char filepath[512];
-                snprintf(filepath, sizeof(filepath), MOUNT_POINT "/WORLD/%s", de->d_name);
-                remove(filepath);
-            }
-        }
-        closedir(d);
-    }
-
-    DIR *dr = opendir(MOUNT_POINT "/BRAIN/COMBAT/replay");
-    if (dr) {
-        struct dirent *de;
-        while ((de = readdir(dr)) != NULL) {
-            if (de->d_type == DT_REG) {
-                char filepath[512];
-                snprintf(filepath, sizeof(filepath), MOUNT_POINT "/BRAIN/COMBAT/replay/%s", de->d_name);
-                remove(filepath);
-            }
-        }
-        closedir(dr);
-    }
-
-    DIR *de_dir = opendir(MOUNT_POINT "/BRAIN/COMBAT/episodes");
-    if (de_dir) {
-        struct dirent *de;
-        while ((de = readdir(de_dir)) != NULL) {
-            if (de->d_type == DT_REG) {
-                char filepath[512];
-                snprintf(filepath, sizeof(filepath), MOUNT_POINT "/BRAIN/COMBAT/episodes/%s", de->d_name);
-                remove(filepath);
-            }
-        }
-        closedir(de_dir);
-    }
-
-    DIR *dc_dir = opendir(MOUNT_POINT "/BRAIN/COMBAT/checkpoints");
-    if (dc_dir) {
-        struct dirent *de;
-        while ((de = readdir(dc_dir)) != NULL) {
-            if (de->d_type == DT_REG) {
-                char filepath[512];
-                snprintf(filepath, sizeof(filepath), MOUNT_POINT "/BRAIN/COMBAT/checkpoints/%s", de->d_name);
-                remove(filepath);
-            }
-        }
-        closedir(dc_dir);
-    }
+    wipe_directory_recursive(MOUNT_POINT "/BRAIN");
 }
 
 void storage_queue_wipe_game_data(void)

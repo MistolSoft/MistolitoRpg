@@ -14,10 +14,7 @@
 #define PPO_CHECKPOINT_MAGIC 0x50504F43
 #define PPO_CHECKPOINT_VERSION 3
 
-#define PPO_CHECKPOINT_DIR          CHECKPOINTS_DIR
-#define PPO_CHECKPOINT_POLICY_W     PPO_CHECKPOINT_DIR "/policy_w_%03d.bin"
-#define PPO_CHECKPOINT_POLICY_B     PPO_CHECKPOINT_DIR "/policy_b_%03d.bin"
-#define PPO_CHECKPOINT_META         PPO_CHECKPOINT_DIR "/checkpoint_%03d.meta"
+
 
 typedef struct {
     float lr;

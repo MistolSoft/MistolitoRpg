@@ -22,11 +22,17 @@
 #define REPLAY_TRANSITIONS_PER_CHUNK  10000
 #define REPLAY_TRANSITION_SIZE  134
 
-#define COMBAT_DIR MOUNT_POINT "/BRAIN/COMBAT"
-#define REPLAY_BASE_DIR COMBAT_DIR "/replay"
-#define EPISODES_DIR COMBAT_DIR "/episodes"
-#define CHECKPOINTS_DIR COMBAT_DIR "/checkpoints"
-#define EXPLORATION_DIR COMBAT_DIR "/exploration"
+typedef enum {
+    BRAIN_CTX_CORE = 0,
+    BRAIN_CTX_COMBAT,
+    BRAIN_CTX_COUNT
+} brain_context_e;
+
+void storage_set_active_brain_context(brain_context_e ctx);
+brain_context_e storage_get_active_brain_context(void);
+void storage_get_replay_dir(char *out_path, size_t max_len);
+void storage_get_episodes_dir(char *out_path, size_t max_len);
+void storage_get_checkpoints_dir(char *out_path, size_t max_len);
 
 typedef struct {
     float state[16];

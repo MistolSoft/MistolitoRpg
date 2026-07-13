@@ -272,7 +272,7 @@ def main():
                         help='Directory containing DNA JSON file')
     parser.add_argument('--pet-data', default='firmware/data/pet_data.json',
                         help='Path to pet_data.json')
-    parser.add_argument('--models-dir', default='inference_engine/models',
+    parser.add_argument('--models-dir', default='models',
                         help='Directory containing model .tflite files')
     parser.add_argument('--baud', type=int, default=BAUDRATE, help='Baud rate')
     parser.add_argument('--wipe', action='store_true', help='Wipe device and reboot')
@@ -353,37 +353,39 @@ def main():
         if not os.path.isabs(models_dir):
             models_dir = os.path.join(project_root, models_dir)
 
-        backbone_file = os.path.join(models_dir, 'backbone.espdl')
-        if os.path.exists(backbone_file):
-            if not init.send_file(backbone_file, "/MODELS/backbone.espdl"):
-                print("Failed to send backbone.espdl")
-                return
-        else:
-            print("Warning: backbone.espdl not found in models dir")
+        combat_dir = os.path.join(models_dir, 'combat')
+        combat_files = [
+            ('backbone.espdl', '/models/combat/backbone.espdl'),
+            ('actor_init.bin', '/models/combat/actor_init.bin'),
+            ('value_head.bin', '/models/combat/value_head.bin'),
+            ('critic_weights.bin', '/models/combat/critic.bin'),
+        ]
 
-        actor_init_file = os.path.join(models_dir, 'actor_init.bin')
-        if os.path.exists(actor_init_file):
-            if not init.send_file(actor_init_file, "/BRAIN/COMBAT/actor_init.bin"):
-                print("Failed to send actor_init.bin")
-                return
-        else:
-            print("Warning: actor_init.bin not found in models dir")
+        print("\n--- Sending Combat Model ---")
+        for filename, remote_path in combat_files:
+            local_path = os.path.join(combat_dir, filename)
+            if os.path.exists(local_path):
+                if not init.send_file(local_path, remote_path):
+                    print(f"Failed to send combat {filename}")
+                    return
+            else:
+                print(f"Warning: combat {filename} not found at {local_path}")
 
-        value_head_file = os.path.join(models_dir, 'value_head.bin')
-        if os.path.exists(value_head_file):
-            if not init.send_file(value_head_file, "/BRAIN/COMBAT/value_head.bin"):
-                print("Failed to send value_head.bin")
-                return
-        else:
-            print("Warning: value_head.bin not found in models dir")
+        core_dir = os.path.join(models_dir, 'core')
+        core_files = [
+            ('backbone.espdl', '/models/core/backbone.espdl'),
+            ('actor_init.bin', '/models/core/actor_init.bin'),
+        ]
 
-        critic_file = os.path.join(models_dir, 'critic_weights.bin')
-        if os.path.exists(critic_file):
-            if not init.send_file(critic_file, "/BRAIN/COMBAT/critic.bin"):
-                print("Failed to send critic_weights.bin")
-                return
-        else:
-            print("Warning: critic_weights.bin not found in models dir")
+        print("\n--- Sending Core Model ---")
+        for filename, remote_path in core_files:
+            local_path = os.path.join(core_dir, filename)
+            if os.path.exists(local_path):
+                if not init.send_file(local_path, remote_path):
+                    print(f"Failed to send core {filename}")
+                    return
+            else:
+                print(f"Warning: core {filename} not found at {local_path}")
 
         if not args.keep_pet:
             print("Deleting pet_data.bin to force DNA-based initialization...")

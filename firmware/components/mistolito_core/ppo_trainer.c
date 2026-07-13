@@ -291,13 +291,16 @@ esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
 
 esp_err_t ppo_save_checkpoint(policy_head_t *ph, uint32_t epoch, float loss)
 {
+    char cp_dir[64];
+    storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
+
     char w_path[128];
     char b_path[128];
     char meta_path[128];
 
-    snprintf(w_path, sizeof(w_path), PPO_CHECKPOINT_POLICY_W, (int)epoch);
-    snprintf(b_path, sizeof(b_path), PPO_CHECKPOINT_POLICY_B, (int)epoch);
-    snprintf(meta_path, sizeof(meta_path), PPO_CHECKPOINT_META, (int)epoch);
+    snprintf(w_path, sizeof(w_path), "%s/policy_w_%03d.bin", cp_dir, (int)epoch);
+    snprintf(b_path, sizeof(b_path), "%s/policy_b_%03d.bin", cp_dir, (int)epoch);
+    snprintf(meta_path, sizeof(meta_path), "%s/checkpoint_%03d.meta", cp_dir, (int)epoch);
 
     spi_bus_lock();
 
@@ -333,11 +336,14 @@ esp_err_t ppo_save_checkpoint(policy_head_t *ph, uint32_t epoch, float loss)
 
 esp_err_t ppo_load_checkpoint(policy_head_t *ph, uint32_t epoch)
 {
+    char cp_dir[64];
+    storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
+
     char w_path[128];
     char b_path[128];
 
-    snprintf(w_path, sizeof(w_path), PPO_CHECKPOINT_POLICY_W, (int)epoch);
-    snprintf(b_path, sizeof(b_path), PPO_CHECKPOINT_POLICY_B, (int)epoch);
+    snprintf(w_path, sizeof(w_path), "%s/policy_w_%03d.bin", cp_dir, (int)epoch);
+    snprintf(b_path, sizeof(b_path), "%s/policy_b_%03d.bin", cp_dir, (int)epoch);
 
     spi_bus_lock();
 
@@ -359,9 +365,12 @@ esp_err_t ppo_load_checkpoint(policy_head_t *ph, uint32_t epoch)
 
 bool ppo_find_latest_checkpoint(uint32_t *epoch_out)
 {
+    char cp_dir[64];
+    storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
+
     spi_bus_lock();
 
-    DIR *dir = opendir(PPO_CHECKPOINT_DIR);
+    DIR *dir = opendir(cp_dir);
     if (!dir) { spi_bus_unlock(); return false; }
 
     struct dirent *ent;

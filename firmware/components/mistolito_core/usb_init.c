@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 static const char *TAG = "USB_INIT";
 
@@ -57,6 +59,23 @@ static size_t base64_decode(const char *input, size_t input_len, uint8_t *output
     return j;
 }
 
+static void create_parent_dirs(const char *path)
+{
+    char temp[128];
+    strncpy(temp, path, sizeof(temp) - 1);
+    temp[sizeof(temp) - 1] = '\0';
+    char *last_slash = strrchr(temp, '/');
+    if (!last_slash) {
+        return;
+    }
+    *last_slash = '\0';
+    struct stat st = {0};
+    if (stat(temp, &st) == -1) {
+        create_parent_dirs(temp);
+        mkdir(temp, 0755);
+    }
+}
+
 static esp_err_t handle_file_start(const char *params, char *response, size_t resp_len)
 {
     char *saveptr;
@@ -93,6 +112,7 @@ static esp_err_t handle_file_start(const char *params, char *response, size_t re
 
     char full_path[128];
     snprintf(full_path, sizeof(full_path), "%s%s", MOUNT_POINT, s_transfer.filename);
+    create_parent_dirs(full_path);
     s_sd_file = fopen(full_path, "w");
     if (!s_sd_file) {
         ESP_LOGE(TAG, "fopen failed: %s", full_path);
