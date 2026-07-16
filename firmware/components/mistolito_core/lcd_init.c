@@ -40,6 +40,10 @@ static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_
 
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
+    if (spi_bus_is_heavy_activity()) {
+        lv_display_flush_ready(disp);
+        return;
+    }
     uint32_t pixel_count = (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
     lv_draw_sw_rgb565_swap(px_map, pixel_count);
     spi_bus_lock();

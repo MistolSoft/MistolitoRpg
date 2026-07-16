@@ -1,5 +1,6 @@
 #include "search_engine.h"
 #include "storage_task.h"
+#include "rules.h"
 #include "esp_random.h"
 #include "esp_log.h"
 #include <math.h>
@@ -306,22 +307,19 @@ void search_engine_tick(pet_t *pet, search_frame_result_t *result)
 
     uint8_t zone_id = tile.biome_id <= 3 ? 0 : (tile.biome_id <= 6 ? 1 : (tile.biome_id <= 9 ? 2 : 3));
     const char *zone_name = get_biome_zone_name(tile.biome_id);
-    ESP_LOGI(TAG, "Pet moved to (%d,%d) | Biome %u (%s) densities=[%u,%u,%u] energy=%u",
+    ESP_LOGD(TAG, "Pet moved to (%d,%d) | Biome %u (%s) densities=[%u,%u,%u] energy=%u",
              pet->world_x, pet->world_y, tile.biome_id, zone_name, tile.densities[0], tile.densities[1], tile.densities[2], pet->energy);
 
-    uint8_t spawn_roll = esp_random() % 100;
-    uint16_t total_spawn_chance = tile.densities[0] + tile.densities[1] + tile.densities[2];
+    int8_t selected_m_idx = -1;
+    if ((esp_random() % 100) < tile.densities[2]) {
+        selected_m_idx = 2;
+    } else if ((esp_random() % 100) < tile.densities[1]) {
+        selected_m_idx = 1;
+    } else if ((esp_random() % 100) < tile.densities[0]) {
+        selected_m_idx = 0;
+    }
 
-    if (spawn_roll < total_spawn_chance) {
-        uint8_t selected_m_idx = 0;
-        if (spawn_roll < tile.densities[0]) {
-            selected_m_idx = 0;
-        } else if (spawn_roll < (uint16_t)tile.densities[0] + tile.densities[1]) {
-            selected_m_idx = 1;
-        } else {
-            selected_m_idx = 2;
-        }
-
+    if (selected_m_idx != -1) {
         enemy_record_t zone_enemies[8];
         uint8_t enemy_count = storage_get_zone_enemies(zone_id, zone_enemies, 8);
 
@@ -333,7 +331,8 @@ void search_engine_tick(pet_t *pet, search_frame_result_t *result)
 
             enemy_record_t selected_enemy = zone_enemies[target_idx];
             uint8_t roll = (esp_random() % 20) + 1;
-            uint8_t check = roll + (pet->wis / 2);
+            int8_t wis_mod = rules_get_modifier(pet->wis);
+            int16_t check = (int16_t)roll + wis_mod;
 
             if (selected_enemy.detect_dc <= check) {
                 result->search_ended = true;
@@ -341,7 +340,7 @@ void search_engine_tick(pet_t *pet, search_frame_result_t *result)
                 result->detected_enemy_id = selected_enemy.id;
                 result->new_data = true;
                 ESP_LOGI(TAG, "Enemy detected in %s (ID %d) at (%d,%d) with roll %d + %d",
-                         zone_name, selected_enemy.id, pet->world_x, pet->world_y, roll, pet->wis / 2);
+                         zone_name, selected_enemy.id, pet->world_x, pet->world_y, roll, wis_mod);
                 return;
             }
         }
@@ -351,6 +350,6 @@ void search_engine_tick(pet_t *pet, search_frame_result_t *result)
     result->encounter_found = false;
     result->new_data = true;
 
-    ESP_LOGI(TAG, "Moved to (%d,%d) in %s, energy remaining: %d",
+    ESP_LOGD(TAG, "Moved to (%d,%d) in %s, energy remaining: %d",
              pet->world_x, pet->world_y, zone_name, pet->energy);
 }

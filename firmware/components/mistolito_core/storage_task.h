@@ -18,15 +18,14 @@
 #define STORAGE_OP_WIPE_DATA     7
 
 #define REPLAY_MAGIC            0x52504C59
-#define REPLAY_VERSION          1
+#define REPLAY_VERSION          2
 #define REPLAY_TRANSITIONS_PER_CHUNK  10000
-#define REPLAY_TRANSITION_SIZE  134
+#define REPLAY_TRANSITION_SIZE  138
 
-typedef enum {
-    BRAIN_CTX_CORE = 0,
-    BRAIN_CTX_COMBAT,
-    BRAIN_CTX_COUNT
-} brain_context_e;
+
+#include "brain_registry.h"
+
+
 
 void storage_set_active_brain_context(brain_context_e ctx);
 brain_context_e storage_get_active_brain_context(void);
@@ -40,6 +39,7 @@ typedef struct {
     float reward;
     float next_state[16];
     uint8_t done;
+    float old_prob;
 } __attribute__((packed)) replay_transition_t;
 
 typedef struct {
@@ -108,13 +108,14 @@ bool storage_load_dna_codes_only(dna_t *dna);
 void storage_derive_dna_stats(dna_t *dna);
 void storage_wipe_game_data(void);
 void storage_queue_wipe_game_data(void);
+bool storage_is_busy(void);
 
 void storage_replay_init(void);
 void storage_replay_set_action_count(uint8_t num_actions);
 uint8_t storage_replay_get_action_count(void);
 void storage_replay_reset(void);
 void storage_checkpoints_reset(void);
-void storage_replay_append(float *state, uint8_t action, float reward, float *next_state, uint8_t done);
+void storage_replay_append(float *state, uint8_t action, float reward, float *next_state, uint8_t done, float old_prob);
 bool storage_replay_read_chunk(uint32_t chunk_index, replay_transition_t *out, uint32_t *out_count);
 bool storage_replay_get_stats(replay_stats_t *stats);
 void storage_replay_get_header_path(char *out_path, size_t max_len);

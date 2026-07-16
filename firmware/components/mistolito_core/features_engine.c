@@ -1,6 +1,7 @@
 #include "features_engine.h"
 #include "game_tables_structs.h"
 #include "storage_task.h"
+#include "dna_engine.h"
 #include "spi_bus.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -138,6 +139,11 @@ bool features_try_learn(pet_t *pet, feature_candidate_t *candidate)
             skill_record_t rec;
             while (fread(&rec, sizeof(skill_record_t), 1, f_skills) == 1) {
                 if (strcmp(rec.name, candidate->name) == 0) {
+                    uint8_t open_slots = dna_get_open_skill_slots(&pet->dna, pet->level);
+                    if (pet->skill_count >= open_slots) {
+                        ESP_LOGI(TAG, "No open skill slots available for feature %s (slots: %d, current: %d)", candidate->name, open_slots, pet->skill_count);
+                        break;
+                    }
                     if (pet->skill_count < MAX_SKILLS) {
                         pet->skills[pet->skill_count].skill_id = rec.id;
                         pet->skills[pet->skill_count].intent_type = rec.intent_type;

@@ -28,58 +28,44 @@ float reward_calculator_calc(reward_context_t *ctx)
     }
     reward += damage_ratio * REWARD_HP_DAMAGE_SCALE;
 
-    ESP_LOGI(TAG, "=== REWARD DEBUG ===");
-    ESP_LOGI(TAG, "  Action: %s | Turn reward: %.4f",
-             ctx->action_taken == REWARD_ACTION_ATTACK ? "ATTACK"
-           : ctx->action_taken == REWARD_ACTION_DEFEND ? "DEFEND"
-           : "FLEE", reward);
-    ESP_LOGI(TAG, "  Damage: dealt=%d taken=%d ratio=%.4f",
-             ctx->damage_dealt, ctx->damage_taken, damage_ratio);
-    ESP_LOGI(TAG, "  Pet HP: %d -> %d (%.0f%% -> %.0f%%)",
-             ctx->pet_hp_before, ctx->pet_hp_after,
-             pet_hp_ratio_before * 100.0f, pet_hp_ratio_after * 100.0f);
-    ESP_LOGI(TAG, "  Enemy HP: %d -> %d (%.0f%% -> %.0f%%)",
-             ctx->enemy_hp_before, ctx->enemy_hp_after,
-             enemy_hp_ratio_before * 100.0f, enemy_hp_ratio_after * 100.0f);
-
     if (ctx->enemy_killed) {
         reward += REWARD_KILL_BONUS;
-        ESP_LOGI(TAG, "  + Kill bonus: %.2f (total: %.4f)", REWARD_KILL_BONUS, reward);
     }
 
     if (ctx->pet_died) {
         reward += REWARD_DEATH_PENALTY;
-        ESP_LOGI(TAG, "  + Death penalty: %.2f (total: %.4f)", REWARD_DEATH_PENALTY, reward);
     }
 
     if (ctx->fled) {
         if (pet_hp_ratio_before < 0.3f) {
             reward += REWARD_FLEE_SAFE;
-            ESP_LOGI(TAG, "  + Flee safe bonus: %.2f (total: %.4f)", REWARD_FLEE_SAFE, reward);
         } else if (pet_hp_ratio_before > 0.7f) {
             reward += REWARD_FLEE_PENALTY;
-            ESP_LOGI(TAG, "  + Flee penalty (high HP): %.2f (total: %.4f)", REWARD_FLEE_PENALTY, reward);
         }
     }
 
     if (ctx->action_taken == REWARD_ACTION_DEFEND && !ctx->fled && !ctx->pet_died) {
         float defend_bonus = REWARD_DEFEND_BONUS * pet_hp_ratio_before;
         reward += defend_bonus;
-        ESP_LOGI(TAG, "  + Defend bonus: %.4f (total: %.4f)", defend_bonus, reward);
     }
 
     if (enemy_hp_ratio_before > 0.5f && enemy_hp_ratio_after < 0.25f) {
         reward += 0.15f;
-        ESP_LOGI(TAG, "  + Enemy almost dead bonus: +0.15 (total: %.4f)", reward);
     }
 
     if (pet_hp_ratio_before < 0.3f && ctx->damage_dealt > ctx->damage_taken) {
         reward += 0.1f;
-        ESP_LOGI(TAG, "  + Low HP comeback bonus: +0.10 (total: %.4f)", reward);
     }
 
-    ESP_LOGI(TAG, "  FINAL REWARD: %.4f", reward);
-    ESP_LOGI(TAG, "===================");
+    ESP_LOGD(TAG, "R[%s] dealt=%d taken=%d petHP=%.0f%%->%.0f%% enmHP=%.0f%%->%.0f%% => %.4f",
+             ctx->action_taken == REWARD_ACTION_ATTACK ? "ATK"
+           : ctx->action_taken == REWARD_ACTION_DEFEND ? "DEF"
+           : "FLE",
+             ctx->damage_dealt, ctx->damage_taken,
+             pet_hp_ratio_before * 100.0f, pet_hp_ratio_after * 100.0f,
+             enemy_hp_ratio_before * 100.0f, enemy_hp_ratio_after * 100.0f,
+             reward);
 
     return reward;
 }
+

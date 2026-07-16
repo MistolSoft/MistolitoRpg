@@ -47,15 +47,6 @@ esp_err_t inference_engine_load_model(const char *path)
         return ESP_ERR_NO_MEM;
     }
 
-    esp_err_t ret = g_model->load(path, fbs::MODEL_LOCATION_IN_SDCARD, nullptr, true);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to load model: %s", esp_err_to_name(ret));
-        delete g_model;
-        g_model = nullptr;
-        return ret;
-    }
-
-    g_model->build(0, dl::MEMORY_MANAGER_GREEDY, true);
     if (!g_model->get_inputs().size() || !g_model->get_outputs().size()) {
         ESP_LOGE(TAG, "Model has no inputs or outputs");
         delete g_model;

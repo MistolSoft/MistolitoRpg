@@ -37,7 +37,7 @@ void app_main(void)
 
     xTaskCreatePinnedToCore(game_coordinator_task, "coordinator", 12288, NULL, 4, &g_coordinator_task_handle, 0);
 
-    xTaskCreatePinnedToCore(storage_task, "storage", 4096, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(storage_task, "storage", 8192, NULL, 1, NULL, 0);
 
     xTaskCreatePinnedToCore(display_task, "display", 8192, NULL, 5, &g_display_task_handle, 1);
 

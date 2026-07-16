@@ -281,6 +281,7 @@ def main():
     parser.add_argument('--status', action='store_true', help='Check device status only')
     parser.add_argument('--dump-replay', action='store_true', help='Dump replay data from device to CSV')
     parser.add_argument('--export', default=None, help='CSV output path for --dump-replay')
+    parser.add_argument('--skip-models', action='store_true', help='Skip uploading heavy neural network models')
 
     args = parser.parse_args()
 
@@ -349,43 +350,46 @@ def main():
         else:
             print("Warning: pet_dna.bin not found")
 
-        models_dir = args.models_dir
-        if not os.path.isabs(models_dir):
-            models_dir = os.path.join(project_root, models_dir)
+        if not args.skip_models:
+            models_dir = args.models_dir
+            if not os.path.isabs(models_dir):
+                models_dir = os.path.join(project_root, models_dir)
 
-        combat_dir = os.path.join(models_dir, 'combat')
-        combat_files = [
-            ('backbone.espdl', '/models/combat/backbone.espdl'),
-            ('actor_init.bin', '/models/combat/actor_init.bin'),
-            ('value_head.bin', '/models/combat/value_head.bin'),
-            ('critic_weights.bin', '/models/combat/critic.bin'),
-        ]
+            combat_dir = os.path.join(models_dir, 'combat')
+            combat_files = [
+                ('backbone.espdl', '/models/combat/backbone.espdl'),
+                ('actor_init.bin', '/models/combat/actor_init.bin'),
+                ('value_head.bin', '/models/combat/value_head.bin'),
+                ('critic_weights.bin', '/models/combat/critic.bin'),
+            ]
 
-        print("\n--- Sending Combat Model ---")
-        for filename, remote_path in combat_files:
-            local_path = os.path.join(combat_dir, filename)
-            if os.path.exists(local_path):
-                if not init.send_file(local_path, remote_path):
-                    print(f"Failed to send combat {filename}")
-                    return
-            else:
-                print(f"Warning: combat {filename} not found at {local_path}")
+            print("\n--- Sending Combat Model ---")
+            for filename, remote_path in combat_files:
+                local_path = os.path.join(combat_dir, filename)
+                if os.path.exists(local_path):
+                    if not init.send_file(local_path, remote_path):
+                        print(f"Failed to send combat {filename}")
+                        return
+                else:
+                    print(f"Warning: combat {filename} not found at {local_path}")
 
-        core_dir = os.path.join(models_dir, 'core')
-        core_files = [
-            ('backbone.espdl', '/models/core/backbone.espdl'),
-            ('actor_init.bin', '/models/core/actor_init.bin'),
-        ]
+            core_dir = os.path.join(models_dir, 'core')
+            core_files = [
+                ('backbone.espdl', '/models/core/backbone.espdl'),
+                ('actor_init.bin', '/models/core/actor_init.bin'),
+            ]
 
-        print("\n--- Sending Core Model ---")
-        for filename, remote_path in core_files:
-            local_path = os.path.join(core_dir, filename)
-            if os.path.exists(local_path):
-                if not init.send_file(local_path, remote_path):
-                    print(f"Failed to send core {filename}")
-                    return
-            else:
-                print(f"Warning: core {filename} not found at {local_path}")
+            print("\n--- Sending Core Model ---")
+            for filename, remote_path in core_files:
+                local_path = os.path.join(core_dir, filename)
+                if os.path.exists(local_path):
+                    if not init.send_file(local_path, remote_path):
+                        print(f"Failed to send core {filename}")
+                        return
+                else:
+                    print(f"Warning: core {filename} not found at {local_path}")
+        else:
+            print("\n--- Skipping AI Models Upload (--skip-models) ---")
 
         if not args.keep_pet:
             print("Deleting pet_data.bin to force DNA-based initialization...")

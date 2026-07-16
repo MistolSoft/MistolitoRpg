@@ -223,6 +223,12 @@ void skills_perks_process_level_up(pet_t *pet, uint8_t profession_level)
 {
     if (pet == NULL) return;
 
+    uint8_t open_slots = dna_get_open_skill_slots(&pet->dna, pet->level);
+    if (pet->skill_count >= open_slots) {
+        ESP_LOGI(TAG, "No open skill slots available (slots: %d, current: %d)", open_slots, pet->skill_count);
+        return;
+    }
+
     learn_candidate_t candidates[32];
     uint8_t count = 0;
 

@@ -66,6 +66,7 @@ SRCS
 "critic_model.c"
 "policy_head.c"
 "value_head.c"
+"brain_registry.c"
 ${SPRITE_PLAYER_SRCS}
 ${SPRITE_ENEMY_SRCS}
 ${TILE_SRCS}

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "dna_engine.h"
+#include "brain_registry.h"
 
 #define MISTOLITO_VERSION "2.0.0"
 

@@ -19,6 +19,7 @@ typedef struct {
 esp_err_t value_head_init(value_head_t *vh);
 void value_head_deinit(value_head_t *vh);
 esp_err_t value_head_forward(const value_head_t *vh, const float *features, float *value_out);
-esp_err_t value_head_load(value_head_t *vh);
+esp_err_t value_head_load(value_head_t *vh, const char *path);
+esp_err_t value_head_save(const value_head_t *vh, uint32_t epoch, const char *path);
 
 #endif

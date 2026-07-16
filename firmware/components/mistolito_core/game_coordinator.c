@@ -29,6 +29,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_random.h"
+#include "esp_attr.h"
 #include "freertos/semphr.h"
 #include <string.h>
 #include <math.h>
@@ -42,6 +43,8 @@ static SemaphoreHandle_t g_snapshot_mutex = NULL;
 static combat_frame_result_t g_combat_result;
 static uint8_t g_resolved_skill_id = 0xFF;
 static bool g_combat_active = false;
+static uint32_t g_combat_transitions = 0;
+
 
 static search_frame_result_t g_search_result;
 static uint32_t g_search_start_ms = 0;
@@ -52,6 +55,7 @@ static rest_frame_result_t g_rest_result;
 static critic_model_t g_critic_model;
 static combat_history_t g_combat_history;
 static float g_last_quality_score = 0.0f;
+static float g_last_old_prob = 1.0f;
 static policy_head_t g_policy_head;
 
 typedef struct {
@@ -66,8 +70,20 @@ typedef struct {
     uint16_t flee_success;
     uint16_t total_damage_dealt;
     uint16_t total_damage_taken;
+    float total_reward;
+    float last_quality;
+    char decision_buf[768];
+    int dec_pos;
 } combat_log_t;
-static combat_log_t g_combat_log;
+static EXT_RAM_BSS_ATTR combat_log_t g_combat_log;
+
+typedef struct {
+    uint16_t tick_count;
+    float total_reward;
+    char decision_buf[512];
+    int dec_pos;
+} core_session_log_t;
+static EXT_RAM_BSS_ATTR core_session_log_t g_core_log;
 
 TaskHandle_t g_coordinator_task_handle = NULL;
 
@@ -98,7 +114,7 @@ static void load_transition_intervals(void)
     fclose(f);
 }
 
-static bool check_level_up_trigger(uint8_t current_level, uint32_t total_trans)
+static bool check_level_up_trigger(uint8_t current_level, uint32_t combat_trans)
 {
     uint32_t transitions_per_level = 500;
     if (s_intervals_count > 0) {
@@ -114,8 +130,7 @@ static bool check_level_up_trigger(uint8_t current_level, uint32_t total_trans)
         return false;
     }
 
-    uint32_t calculated_level = total_trans / transitions_per_level;
-    return (calculated_level >= current_level);
+    return (combat_trans >= current_level * transitions_per_level);
 }
 
 static uint32_t calc_exp_for_level(uint8_t level)
@@ -130,10 +145,19 @@ static uint16_t calc_hp_bonus(uint8_t level)
     return 5 + 5 * ((level - 1) / 2);
 }
 
+static const char *g_loaded_model_type = NULL;
+
 static void transition_to(game_state_e new_state)
 {
     g_snapshot.state = new_state;
     g_snapshot.state_entered_ms = (uint32_t)(esp_timer_get_time() / 1000);
+
+    if (new_state != GS_SEARCHING && new_state != GS_COMBAT) {
+        inference_engine_unload();
+        g_loaded_model_type = NULL;
+    } else {
+        g_loaded_model_type = NULL;
+    }
 
     game_event_t evt = { .type = EVT_STATE_CHANGED, .data.new_state = new_state };
     events_send(&evt);
@@ -141,47 +165,41 @@ static void transition_to(game_state_e new_state)
     ESP_LOGI(TAG, "State transition: %d", new_state);
 }
 
-static const char *g_loaded_model_type = NULL;
-
-static void load_core_model(void)
+static esp_err_t load_brain_model(brain_context_e ctx_id)
 {
-    storage_set_active_brain_context(BRAIN_CTX_CORE);
-    if (g_loaded_model_type != NULL && strcmp(g_loaded_model_type, "core") == 0) {
-        return;
+    const brain_model_registry_t *reg = &BRAIN_REGISTRY[ctx_id];
+    storage_set_active_brain_context(ctx_id);
+    
+    if (g_loaded_model_type != NULL && strcmp(g_loaded_model_type, reg->name) == 0) {
+        return ESP_OK;
     }
-    ESP_LOGI(TAG, "Loading core model...");
+    
+    while (storage_is_busy()) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    
+    ESP_LOGI(TAG, "Loading model: %s...", reg->name);
+    spi_bus_suspend_lcd();
     spi_bus_lock();
-    esp_err_t ret = inference_engine_load_model("/sdcard/models/core/backbone.espdl");
+    
+    esp_err_t ret = inference_engine_load_model(reg->backbone_path);
     if (ret == ESP_OK) {
         policy_head_deinit(&g_policy_head);
-        policy_head_init(&g_policy_head, 4);
-        policy_head_load(&g_policy_head, "/sdcard/models/core/policy_head.bin", "/sdcard/models/core/actor_init.bin");
-        g_loaded_model_type = "core";
+        uint8_t num_actions = reg->default_actions;
+        if (ctx_id == BRAIN_CTX_COMBAT) {
+            num_actions += g_snapshot.pet.skill_count;
+        }
+        policy_head_init(&g_policy_head, num_actions);
+        policy_head_load(&g_policy_head, reg->policy_path, reg->actor_init_path);
+        g_loaded_model_type = reg->name;
     } else {
-        ESP_LOGE(TAG, "Failed to load core model: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to load model %s: %s", reg->name, esp_err_to_name(ret));
+        g_loaded_model_type = "failed";
     }
+    
     spi_bus_unlock();
-}
-
-static void load_combat_model(void)
-{
-    storage_set_active_brain_context(BRAIN_CTX_COMBAT);
-    if (g_loaded_model_type != NULL && strcmp(g_loaded_model_type, "combat") == 0) {
-        return;
-    }
-    ESP_LOGI(TAG, "Loading combat model...");
-    spi_bus_lock();
-    esp_err_t ret = inference_engine_load_model("/sdcard/models/combat/backbone.espdl");
-    if (ret == ESP_OK) {
-        policy_head_deinit(&g_policy_head);
-        uint8_t num_combat_actions = 3 + g_snapshot.pet.skill_count;
-        policy_head_init(&g_policy_head, num_combat_actions);
-        policy_head_load(&g_policy_head, "/sdcard/models/combat/policy_head.bin", "/sdcard/models/combat/actor_init.bin");
-        g_loaded_model_type = "combat";
-    } else {
-        ESP_LOGE(TAG, "Failed to load combat model: %s", esp_err_to_name(ret));
-    }
-    spi_bus_unlock();
+    spi_bus_resume_lcd();
+    return ret;
 }
 
 static void emit_level_up_event(uint8_t level)
@@ -290,7 +308,9 @@ static void process_level_up(void)
 {
 uint8_t new_level = g_snapshot.pet.level + 1;
 g_snapshot.pet.level = new_level;
+g_snapshot.pet.exp = 0;
 g_snapshot.pet.exp_next = calc_exp_for_level(new_level);
+g_combat_transitions = 0;
 
 uint16_t hp_bonus = calc_hp_bonus(new_level);
 g_snapshot.pet.hp_max += hp_bonus;
@@ -377,12 +397,6 @@ case STAT_CHA: g_snapshot.pet.cha++; break;
 }
 }
 }
-}
-
-for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
-    if (g_snapshot.pet.dna.intent_unlock[i] == new_level) {
-        ESP_LOGI(TAG, "Intent %d unlocked at level %d (via DNA)", i, new_level);
-    }
 }
 
 g_snapshot.pet.dirty_flags |= PET_DIRTY_LEVEL | PET_DIRTY_HP | PET_DIRTY_STATS | PET_DIRTY_PROF_LEVEL | PET_DIRTY_SKILLS | PET_DIRTY_PERKS | PET_DIRTY_SPELLS | PET_DIRTY_RESOURCES | PET_DIRTY_MANEUVERS;
@@ -478,6 +492,7 @@ static combat_action_e decide_combat_action(pet_t *pet, enemy_t *enemy)
         uint8_t skill_slot = forced_nn_idx - 3;
         exploration_manager_on_use(skill_slot);
         g_resolved_skill_id = pet->skills[skill_slot].skill_id;
+        g_last_old_prob = 1.0f;
         ESP_LOGI(TAG, "Forced exploration: slot %d -> skill_id %d", skill_slot, g_resolved_skill_id);
         return ACTION_SKILL;
     }
@@ -488,12 +503,12 @@ static combat_action_e decide_combat_action(pet_t *pet, enemy_t *enemy)
 
     if (inference_engine_is_loaded()) {
         float features[16];
-        ESP_LOGI(TAG, "NN Inputs: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]",
+        ESP_LOGD(TAG, "[CMB] In: [%.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f]",
                  input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], input[8]);
 
         esp_err_t ret = inference_engine_run(input, 9, features, 16);
         if (ret == ESP_OK) {
-            ESP_LOGI(TAG, "Backbone Features: [%.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f]",
+            ESP_LOGD(TAG, "[CMB] Feat: [%.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f %.2f]",
                      features[0], features[1], features[2], features[3], features[4], features[5], features[6], features[7],
                      features[8], features[9], features[10], features[11], features[12], features[13], features[14], features[15]);
 
@@ -510,14 +525,18 @@ static combat_action_e decide_combat_action(pet_t *pet, enemy_t *enemy)
                         best_idx = i;
                     }
                 }
+                g_last_old_prob = scores[best_idx];
 
-                char score_buf[128] = {0};
-                int pos = 0;
-                pos += snprintf(score_buf + pos, sizeof(score_buf) - pos, "ATK=%.3f DEF=%.3f FLEE=%.3f", scores[0], scores[1], scores[2]);
-                for (uint8_t i = 0; i < pet->skill_count && (3 + i) < num_actions; i++) {
-                    pos += snprintf(score_buf + pos, sizeof(score_buf) - pos, " SK%d=%.3f", i, scores[3 + i]);
+                static const char *act_labels[] = {"A", "D", "F", "S"};
+                const char *lbl = (best_idx < 4) ? act_labels[best_idx] : "S";
+
+                if (g_combat_log.dec_pos < (int)sizeof(g_combat_log.decision_buf) - 32) {
+                    int n = snprintf(g_combat_log.decision_buf + g_combat_log.dec_pos,
+                                     sizeof(g_combat_log.decision_buf) - g_combat_log.dec_pos,
+                                     "*%s(%.2f,%.2f,%.2f) ", lbl,
+                                     scores[0], scores[1], scores[2]);
+                    if (n > 0) g_combat_log.dec_pos += n;
                 }
-                ESP_LOGI(TAG, "Inference run: best_idx=%d [%s]", best_idx, score_buf);
 
                 if (best_idx == 0) {
                     return ACTION_ATTACK;
@@ -527,7 +546,7 @@ static combat_action_e decide_combat_action(pet_t *pet, enemy_t *enemy)
                     return ACTION_FLEE;
                 } else if (best_idx - 3 < pet->skill_count) {
                     g_resolved_skill_id = pet->skills[best_idx - 3].skill_id;
-                    ESP_LOGI(TAG, "Inference: skill slot %d -> skill_id %d (score=%.3f)", best_idx - 3, g_resolved_skill_id, best_score);
+                    ESP_LOGD(TAG, "[CMB] skill_slot=%d skill_id=%d score=%.3f", best_idx - 3, g_resolved_skill_id, best_score);
                     return ACTION_SKILL;
                 }
             } else {
@@ -677,7 +696,7 @@ static void simulate_combat_turn(void)
     float reward = reward_calculator_calc(&reward_ctx);
 
     bool done = !g_snapshot.pet.is_alive || combat_engine_all_enemies_dead(&g_snapshot.encounter);
-    storage_replay_append(state_before, action_idx, reward, state_after, done);
+    storage_replay_append(state_before, action_idx, reward, state_after, done, g_last_old_prob);
 
     combat_turn_t turn = {
         .hit = g_snapshot.combat.player_hit,
@@ -703,10 +722,11 @@ static void simulate_combat_turn(void)
 
 
 
-    experience_logger_log_step(state_before, action_idx, reward, state_after, done);
-
-    ESP_LOGI(TAG, "Transition logged: action=%d reward=%.4f done=%d quality=%.3f total=%lu",
-             action_idx, reward, done, g_last_quality_score, (unsigned long)storage_replay_get_total());
+    g_combat_log.total_reward += reward;
+    g_combat_log.last_quality = g_last_quality_score;
+    g_combat_transitions++;
+    g_snapshot.pet.exp = g_combat_transitions;
+    g_snapshot.pet.dirty_flags |= PET_DIRTY_LEVEL; // Forzar guardado de exp
 
     g_combat_result.turns_this_frame++;
     g_combat_result.new_data = true;
@@ -726,19 +746,20 @@ for (uint8_t i = 0; i < g_snapshot.encounter.count; i++) {
     }
 }
 
-const char *outcome = (enemies_killed > 0) ? "VICTORY" : "DEFEAT";
-ESP_LOGI(TAG, "=== COMBAT SUMMARY ===");
-ESP_LOGI(TAG, "Enemy: %s HP %d->%d (%s) | Pet: HP %d->%d",
-         g_combat_log.enemy_name,
-         g_combat_log.enemy_hp_start, enemy_hp_end, outcome,
-         g_combat_log.pet_hp_start, g_snapshot.pet.hp);
-ESP_LOGI(TAG, "Turns: %d | ATK:%d DEF:%d FLEE:%d(%d ok) | DMG dealt:%d taken:%d | EXP:%d",
+const char *outcome = (enemies_killed > 0) ? "WIN" : "LOSS";
+ESP_LOGI(TAG, "[CMB] %s vs %s | %s T:%d ATK:%d DEF:%d FLY:%d/%d | Dealt:%d Taken:%d | HP:%d->%d/%d | EnemHP:%d->%d | R:%.3f Q:%.3f | T:%lu",
+         g_snapshot.pet.name, g_combat_log.enemy_name, outcome,
          g_combat_log.turn_count,
          g_combat_log.attack_count, g_combat_log.defend_count,
-         g_combat_log.flee_count, g_combat_log.flee_success,
+         g_combat_log.flee_success, g_combat_log.flee_count,
          g_combat_log.total_damage_dealt, g_combat_log.total_damage_taken,
-         g_combat_log.turn_count);
-ESP_LOGI(TAG, "======================");
+         g_combat_log.pet_hp_start, g_snapshot.pet.hp, g_snapshot.pet.hp_max,
+         g_combat_log.enemy_hp_start, enemy_hp_end,
+         g_combat_log.total_reward, g_combat_log.last_quality,
+         (unsigned long)storage_replay_get_total());
+if (g_combat_log.dec_pos > 0) {
+    ESP_LOGI(TAG, "[CMB DEC] %s", g_combat_log.decision_buf);
+}
 
 memset(&g_combat_log, 0, sizeof(g_combat_log));
 
@@ -762,9 +783,7 @@ g_combat_result.new_data = true;
 experience_logger_end_episode(g_combat_result.victory, g_snapshot.encounter.enemies[0].level);
 
 if (g_combat_result.victory) {
-    uint32_t total_trans = storage_replay_get_total();
-
-    if (check_level_up_trigger(g_snapshot.pet.level, total_trans)) {
+    if (check_level_up_trigger(g_snapshot.pet.level, g_combat_transitions)) {
         transition_to(GS_TRAINING);
     } else if (rest_should_rest(g_snapshot.pet.hp, g_snapshot.pet.hp_max, g_snapshot.pet.rest.hp_rest_threshold)) {
         rest_init(&g_snapshot.rest, &g_snapshot.pet);
@@ -821,6 +840,8 @@ void game_coordinator_task(void *arg)
                     }
 
         g_snapshot.pet.exp_next = calc_exp_for_level(g_snapshot.pet.level);
+        g_combat_transitions = g_snapshot.pet.exp;
+
 
         g_search_start_ms = 0;
         g_search_duration_ms = 0;
@@ -836,8 +857,8 @@ void game_coordinator_task(void *arg)
     }
     break;
 
-case GS_SEARCHING:
-    load_core_model();
+case GS_SEARCHING: {
+    load_brain_model(BRAIN_CTX_CORE);
     if (g_search_start_ms == 0) {
         g_search_start_ms = (uint32_t)(esp_timer_get_time() / 1000);
         search_engine_init(&g_snapshot.pet);
@@ -848,44 +869,171 @@ case GS_SEARCHING:
     uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
     if (now_ms - g_search_start_ms >= 1000) {
         g_search_start_ms = now_ms;
-        search_engine_tick(&g_snapshot.pet, &g_search_result);
-        if (g_search_result.search_ended) {
-            if (g_search_result.encounter_found) {
-                combat_engine_start_encounter_with_id(&g_snapshot.encounter, g_snapshot.pet.level, g_search_result.detected_enemy_id);
 
-                ESP_LOGI(TAG, "Encounter spawned: %d enemy(s)", g_snapshot.encounter.count);
+        float core_inputs[6];
+        memset(core_inputs, 0, sizeof(core_inputs));
+        core_inputs[0] = (float)g_snapshot.pet.hp / g_snapshot.pet.hp_max;
+        core_inputs[1] = (float)g_snapshot.pet.energy / g_snapshot.pet.energy_max;
+        core_inputs[2] = (float)g_snapshot.pet.level / 100.0f;
 
-                uint8_t target_idx = combat_engine_select_first_alive(&g_snapshot.encounter);
-                enemy_t *first_enemy = &g_snapshot.encounter.enemies[target_idx];
-                combat_engine_roll_initiative(&g_snapshot.pet, first_enemy, &g_snapshot.combat);
+        search_radar_t radar;
+        search_engine_generate_radar(&g_snapshot.pet, &radar);
 
-                critic_history_init(&g_combat_history, (float)g_snapshot.pet.hp_max, (float)first_enemy->hp_max);
-                g_last_quality_score = 0.0f;
+        uint8_t count = 0;
+        for (uint8_t i = 0; i < radar.cell_count && count < 3; i++) {
+            core_inputs[3 + count] = (float)radar.cells[i].density / 100.0f;
+            count++;
+        }
 
-                memset(&g_combat_result, 0, sizeof(g_combat_result));
-                memset(&g_combat_log, 0, sizeof(g_combat_log));
-                g_combat_active = true;
+        // Ejecutar inferencia de la red Core
+        float core_features[16];
+        memset(core_features, 0, sizeof(core_features));
+        float core_scores[PPO_MAX_ACTIONS];
+        memset(core_scores, 0, sizeof(core_scores));
 
-                experience_logger_start_episode();
+        uint8_t action_idx = 2; // Move por defecto
+        float old_prob = 1.0f;
 
-                g_search_start_ms = 0;
-                g_search_duration_ms = 0;
+        if (inference_engine_is_loaded()) {
+            if (inference_engine_run(core_inputs, 6, core_features, 16) == ESP_OK) {
+                if (policy_head_forward(&g_policy_head, core_features, core_scores) == ESP_OK) {
+                    uint8_t num_actions = g_policy_head.num_actions;
+                    uint8_t best_idx = 0;
+                    float best_score = core_scores[0];
+                    for (uint8_t i = 1; i < num_actions; i++) {
+                        if (core_scores[i] > best_score) {
+                            best_score = core_scores[i];
+                            best_idx = i;
+                        }
+                    }
+                    action_idx = best_idx;
+                    old_prob = best_score;
+                }
+            }
+        }
 
-                emit_enemy_spawned_event();
-                transition_to(GS_COMBAT);
-            } else {
+        static const char *core_action_names[] = {"SCAN", "SRCH", "MOVE", "REST"};
+        ESP_LOGI(TAG, "[CORE] Decision: %s (%d) prob=%.3f | SCAN=%.3f SRCH=%.3f MOVE=%.3f REST=%.3f | Energy: %d",
+                 (action_idx < 4) ? core_action_names[action_idx] : "???", action_idx, old_prob,
+                 core_scores[0], core_scores[1], core_scores[2], core_scores[3],
+                 g_snapshot.pet.energy);
+
+        static const char *core_act_labels[] = {"SC", "SR", "MV", "RE"};
+        const char *clbl = (action_idx < 4) ? core_act_labels[action_idx] : "??";
+        if (g_core_log.dec_pos < (int)sizeof(g_core_log.decision_buf) - 32) {
+            int cn = snprintf(g_core_log.decision_buf + g_core_log.dec_pos,
+                              sizeof(g_core_log.decision_buf) - g_core_log.dec_pos,
+                              "*%s(%.2f,%.2f,%.2f,%.2f) ", clbl,
+                              core_scores[0], core_scores[1], core_scores[2], core_scores[3]);
+            if (cn > 0) g_core_log.dec_pos += cn;
+        }
+        g_core_log.tick_count++;
+
+
+        float reward = 0.0f;
+        bool done = false;
+
+        // Ejecutar la acción elegida por el Core
+        switch (action_idx) {
+            case 0: // SCAN
+                search_engine_generate_radar(&g_snapshot.pet, &radar);
+                reward = 0.1f;
+                break;
+
+            case 1: // SEARCH
+                search_engine_tick(&g_snapshot.pet, &g_search_result);
+                if (g_search_result.search_ended) {
+                    if (g_search_result.encounter_found) {
+                        reward = 1.0f;
+                        if (g_core_log.dec_pos > 0) {
+                            ESP_LOGI(TAG, "[CORE END->CMB] T:%d R:%.2f | %s",
+                                     g_core_log.tick_count, g_core_log.total_reward + reward,
+                                     g_core_log.decision_buf);
+                        }
+                        memset(&g_core_log, 0, sizeof(g_core_log));
+                        combat_engine_start_encounter_with_id(&g_snapshot.encounter, g_snapshot.pet.level, g_search_result.detected_enemy_id);
+                        ESP_LOGI(TAG, "Encounter spawned: %d enemy(s)", g_snapshot.encounter.count);
+
+                        uint8_t target_idx = combat_engine_select_first_alive(&g_snapshot.encounter);
+                        enemy_t *first_enemy = &g_snapshot.encounter.enemies[target_idx];
+                        combat_engine_roll_initiative(&g_snapshot.pet, first_enemy, &g_snapshot.combat);
+                        critic_history_init(&g_combat_history, (float)g_snapshot.pet.hp_max, (float)first_enemy->hp_max);
+                        g_last_quality_score = 0.0f;
+
+                        memset(&g_combat_result, 0, sizeof(g_combat_result));
+                        memset(&g_combat_log, 0, sizeof(g_combat_log));
+                        g_combat_active = true;
+
+                        experience_logger_start_episode();
+                        g_search_start_ms = 0;
+                        g_search_duration_ms = 0;
+
+                        emit_enemy_spawned_event();
+                        transition_to(GS_COMBAT);
+                    } else {
+                        // Search falló en encontrar enemigos
+                        reward = -0.2f;
+                    }
+                }
+                break;
+
+            case 2: // MOVE
+                // Realizar un tick de movimiento (dx/dy aleatorio por ahora)
+                {
+                    int16_t old_x = g_snapshot.pet.world_x;
+                    int16_t old_y = g_snapshot.pet.world_y;
+                    search_engine_tick(&g_snapshot.pet, &g_search_result);
+                    if (g_snapshot.pet.world_x != old_x || g_snapshot.pet.world_y != old_y) {
+                        reward = 0.2f;
+                    } else {
+                        reward = -0.1f;
+                    }
+                }
+                break;
+
+            case 3: // REST
+            default:
+                if (g_core_log.dec_pos > 0) {
+                    ESP_LOGI(TAG, "[CORE END->REST] T:%d R:%.2f | %s",
+                             g_core_log.tick_count, g_core_log.total_reward + 0.5f,
+                             g_core_log.decision_buf);
+                }
+                memset(&g_core_log, 0, sizeof(g_core_log));
                 g_search_start_ms = 0;
                 rest_init(&g_snapshot.rest, &g_snapshot.pet);
                 transition_to(GS_RESTING);
-            }
+                reward = 0.5f;
+                done = true;
+                break;
         }
+
+        // Registrar la transición de Core en la SD
+        float core_next_inputs[6];
+        memcpy(core_next_inputs, core_inputs, sizeof(core_inputs));
+        core_next_inputs[0] = (float)g_snapshot.pet.hp / g_snapshot.pet.hp_max;
+        core_next_inputs[1] = (float)g_snapshot.pet.energy / g_snapshot.pet.energy_max;
+
+        float core_state_before[16];
+        float core_state_after[16];
+        memset(core_state_before, 0, sizeof(core_state_before));
+        memset(core_state_after, 0, sizeof(core_state_after));
+
+        if (inference_engine_is_loaded()) {
+            inference_engine_run(core_inputs, 6, core_state_before, 16);
+            inference_engine_run(core_next_inputs, 6, core_state_after, 16);
+        }
+
+        g_core_log.total_reward += reward;
+        storage_replay_append(core_state_before, action_idx, reward, core_state_after, done, old_prob);
+
     } else {
         taskYIELD();
     }
     break;
+}
 
             case GS_COMBAT:
-                load_combat_model();
+                load_brain_model(BRAIN_CTX_COMBAT);
                 if (g_snapshot.combat.fled) {
                     ESP_LOGD(TAG, "GS_COMBAT: flee branch (pet_alive=%d)", g_snapshot.pet.is_alive);
                     experience_logger_end_episode(false, g_snapshot.encounter.enemies[0].level);
@@ -929,46 +1077,90 @@ case GS_VICTORY:
 
 case GS_TRAINING:
 {
-    uint32_t total_before_training = storage_replay_get_total();
-    ESP_LOGI(TAG, "Starting PPO training... total_from_storage=%lu", (unsigned long)total_before_training);
+    training_mode_enter();
+    ppo_config_t config = ppo_config_default();
 
-    training_mode_update_status("Entrenando modelo...");
-
-    uint8_t num_actions = 3 + g_snapshot.pet.skill_count;
-
-    load_combat_model();
-
-    if (num_actions > g_policy_head.num_actions) {
-        ESP_LOGI(TAG, "Expanding policy head: %d -> %d actions",
-                 g_policy_head.num_actions, num_actions);
-        policy_head_expand(&g_policy_head, num_actions);
-        storage_replay_set_action_count(num_actions);
+    // 1. ENTRENAR CORE SECUENCIALMENTE PRIMERO
+    {
+        ESP_LOGI(TAG, "GS_TRAINING: Loading Core Model for training...");
+        training_mode_update_status("Entrenando Core...");
+        
+        if (load_brain_model(BRAIN_CTX_CORE) == ESP_OK) {
+            value_head_t vh_core;
+            if (value_head_init(&vh_core) == ESP_OK) {
+                if (value_head_load(&vh_core, BRAIN_REGISTRY[BRAIN_CTX_CORE].value_path) == ESP_OK) {
+                    training_progress_t progress_core = {0};
+                    esp_err_t ret_core = ppo_train_model(&g_policy_head, &vh_core, BRAIN_CTX_CORE, &config, &progress_core);
+                    if (ret_core == ESP_OK && progress_core.accepted) {
+                        ESP_LOGI(TAG, "Core model training success, loss=%.4f", progress_core.loss);
+                        
+                        // Guardar pesos de Core
+                        policy_head_save(&g_policy_head, g_snapshot.pet.level + 1, BRAIN_REGISTRY[BRAIN_CTX_CORE].policy_path);
+                        value_head_save(&vh_core, g_snapshot.pet.level + 1, BRAIN_REGISTRY[BRAIN_CTX_CORE].value_path);
+                    } else {
+                        ESP_LOGW(TAG, "Core model training skipped (not enough data or failed)");
+                    }
+                }
+                value_head_deinit(&vh_core);
+            }
+        }
     }
 
-    ppo_config_t config = ppo_config_default();
-    training_progress_t progress = {0};
+    // Limpiar caché de carga antes del siguiente modelo
+    g_loaded_model_type = NULL;
 
-    esp_err_t ret = ppo_train_policy(&g_policy_head, &config, &progress);
-
-    if (ret == ESP_OK && progress.accepted) {
-        ESP_LOGI(TAG, "Training done, loss=%.4f", progress.loss);
-        training_mode_update_status("Entrenamiento completo!");
-
-        uint32_t next_epoch = 0;
-        ppo_find_latest_checkpoint(&next_epoch);
-        ppo_save_checkpoint(&g_policy_head, next_epoch + 1, progress.loss);
-
-        policy_head_save(&g_policy_head, next_epoch + 1, "/sdcard/models/combat/policy_head.bin");
-
-        process_level_up();
-        ESP_LOGI(TAG, "Level up! Pet is now level %d", g_snapshot.pet.level);
-    } else {
-        ESP_LOGW(TAG, "Training failed: staying at level %d (need %d more transitions)",
-                 g_snapshot.pet.level, 50);
-        training_mode_update_status("Entrenamiento fallido - reintentando...");
+    // 2. ENTRENAR COMBAT SECUENCIALMENTE SEGUNDO
+    bool combat_success = false;
+    {
+        ESP_LOGI(TAG, "GS_TRAINING: Loading Combat Model for training...");
+        training_mode_update_status("Entrenando Combate...");
+        
+        if (load_brain_model(BRAIN_CTX_COMBAT) == ESP_OK) {
+            value_head_t vh_combat;
+            if (value_head_init(&vh_combat) == ESP_OK) {
+                if (value_head_load(&vh_combat, BRAIN_REGISTRY[BRAIN_CTX_COMBAT].value_path) == ESP_OK) {
+                    training_progress_t progress_combat = {0};
+                    esp_err_t ret_combat = ppo_train_model(&g_policy_head, &vh_combat, BRAIN_CTX_COMBAT, &config, &progress_combat);
+                    if (ret_combat == ESP_OK && progress_combat.accepted) {
+                        ESP_LOGI(TAG, "Combat model training success, loss=%.4f", progress_combat.loss);
+                        combat_success = true;
+                        
+                        training_mode_update_status("Guardando checkpoint...");
+                        
+                        // Guardar checkpoint e historicidad de combate
+                        char cp_dir[64];
+                        storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
+                        ppo_save_checkpoint(&g_policy_head, g_snapshot.pet.level + 1, progress_combat.loss, cp_dir);
+                        
+                        policy_head_save(&g_policy_head, g_snapshot.pet.level + 1, BRAIN_REGISTRY[BRAIN_CTX_COMBAT].policy_path);
+                        value_head_save(&vh_combat, g_snapshot.pet.level + 1, BRAIN_REGISTRY[BRAIN_CTX_COMBAT].value_path);
+                        
+                        // Subir de nivel real
+                        process_level_up();
+                        ESP_LOGI(TAG, "Level up! Pet is now level %d", g_snapshot.pet.level);
+                        training_mode_update_status("Level up completado!");
+                        
+                        // Expansión si hay nuevas skills aprendidas
+                        uint8_t num_actions_new = 3 + g_snapshot.pet.skill_count;
+                        if (num_actions_new > g_policy_head.num_actions) {
+                            ESP_LOGI(TAG, "Expanding policy head: %d -> %d actions",
+                                     g_policy_head.num_actions, num_actions_new);
+                            policy_head_expand(&g_policy_head, num_actions_new);
+                            storage_replay_set_action_count(num_actions_new);
+                            storage_replay_reset();
+                        }
+                    } else {
+                        ESP_LOGW(TAG, "Combat model training failed: staying at level %d", g_snapshot.pet.level);
+                        training_mode_update_status("Entrenamiento fallido - reintentando...");
+                    }
+                }
+                value_head_deinit(&vh_combat);
+            }
+        }
     }
 
     vTaskDelay(pdMS_TO_TICKS(1000));
+    training_mode_exit(combat_success);
 
     if (rest_should_rest(g_snapshot.pet.hp, g_snapshot.pet.hp_max, g_snapshot.pet.rest.hp_rest_threshold)) {
         rest_init(&g_snapshot.rest, &g_snapshot.pet);

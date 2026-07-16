@@ -4,7 +4,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <esp_err.h>
+#include "brain_registry.h"
 #include "policy_head.h"
+#include "value_head.h"
 #include "training_mode.h"
 
 #define PPO_INPUT_SIZE      9
@@ -51,12 +53,12 @@ typedef struct {
     uint8_t reserved[3];
 } __attribute__((packed)) ppo_checkpoint_meta_t;
 
-esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
-                           training_progress_t *progress);
+esp_err_t ppo_train_model(policy_head_t *ph, value_head_t *vh, brain_context_e context,
+                           const ppo_config_t *config, training_progress_t *progress);
 
-esp_err_t ppo_save_checkpoint(policy_head_t *ph, uint32_t epoch, float loss);
-esp_err_t ppo_load_checkpoint(policy_head_t *ph, uint32_t epoch);
-bool ppo_find_latest_checkpoint(uint32_t *epoch_out);
+esp_err_t ppo_save_checkpoint(policy_head_t *ph, uint32_t epoch, float loss, const char *cp_dir);
+esp_err_t ppo_load_checkpoint(policy_head_t *ph, uint32_t epoch, const char *cp_dir);
+bool ppo_find_latest_checkpoint(uint32_t *epoch_out, const char *cp_dir);
 
 ppo_config_t ppo_config_default(void);
 

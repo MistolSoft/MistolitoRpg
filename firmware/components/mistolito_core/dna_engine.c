@@ -93,7 +93,7 @@ esp_err_t dna_init(dna_t *dna)
     dna_generate_hash(dna);
 
     dna_derive_all_stats(dna, dna->base_stats);
-    dna_derive_intent_unlock(dna);
+    dna_derive_skill_slots(dna);
 
     for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
         dna->caps[i] = dna->base_stats[i] + DNA_CAP_OFFSET;
@@ -177,37 +177,22 @@ void dna_derive_all_stats(dna_t *dna, uint8_t stats[DNA_STAT_COUNT])
              stats[0], stats[1], stats[2], stats[3], stats[4], stats[5]);
 }
 
-void dna_derive_intent_unlock(dna_t *dna)
+void dna_derive_skill_slots(dna_t *dna)
 {
-    if (dna == NULL) {
-        return;
-    }
+    if (dna == NULL) return;
 
-    for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
-        if (i == 0 || i == 1 || i == 5) {
-            dna->intent_unlock[i] = 1;
-            continue;
-        }
+    uint8_t h = dna->hash[28];
+    dna->max_skills = 2 + (h % 7);
 
-        uint8_t h = dna->hash[i * 4 + 3];
-        uint8_t roll = (h % 20) + 1;
-
-        if (roll <= 3) {
-            dna->intent_unlock[i] = 0;
-        } else if (roll <= 8) {
-            dna->intent_unlock[i] = 1;
-        } else if (roll <= 13) {
-            dna->intent_unlock[i] = 3;
-        } else if (roll <= 17) {
-            dna->intent_unlock[i] = 5;
+    uint8_t base_levels[] = {1, 3, 5, 8, 12, 17, 23, 30};
+    for (uint8_t i = 0; i < DNA_MAX_SKILL_SLOTS; i++) {
+        if (i < dna->max_skills) {
+            uint8_t jitter = dna->hash[(i * 3 + 7) % DNA_HASH_LEN] % 3;
+            dna->skill_slot_levels[i] = base_levels[i] + jitter;
         } else {
-            dna->intent_unlock[i] = 8;
+            dna->skill_slot_levels[i] = 0;
         }
     }
-
-    ESP_LOGI(TAG, "Intent unlock: ATK=%d DEF=%d HEAL=%d MAGIC=%d SUP=%d FLEE=%d",
-             dna->intent_unlock[0], dna->intent_unlock[1], dna->intent_unlock[2],
-             dna->intent_unlock[3], dna->intent_unlock[4], dna->intent_unlock[5]);
 }
 
 uint8_t dna_roll_d20(dna_t *dna, uint8_t stat_idx, uint32_t action_salt)
@@ -375,15 +360,14 @@ void dna_apply_levelup(dna_t *dna, uint8_t stats[DNA_STAT_COUNT], levelup_queue_
     }
 }
 
-uint8_t dna_engine_get_unlocked_actions(const dna_t *dna, uint8_t level)
+uint8_t dna_get_open_skill_slots(const dna_t *dna, uint8_t level)
 {
-    if (dna == NULL) return 1;
-
-    uint8_t count = 0;
-    for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
-        if (dna->intent_unlock[i] != 0 && dna->intent_unlock[i] <= level) {
-            count++;
+    if (dna == NULL) return 0;
+    uint8_t open = 0;
+    for (uint8_t i = 0; i < DNA_MAX_SKILL_SLOTS; i++) {
+        if (dna->skill_slot_levels[i] != 0 && dna->skill_slot_levels[i] <= level) {
+            open++;
         }
     }
-    return count > 0 ? count : 1;
+    return open;
 }

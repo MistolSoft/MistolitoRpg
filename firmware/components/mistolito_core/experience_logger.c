@@ -1,5 +1,6 @@
 #include "experience_logger.h"
 #include "storage_task.h"
+#include "ppo_trainer.h"
 #include "spi_bus.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
@@ -26,7 +27,7 @@ void experience_logger_start_episode(void)
     ESP_LOGI(TAG, "Episode started");
 }
 
-void experience_logger_log_step(float *state, uint8_t action, float reward, float *next_state, uint8_t done)
+void experience_logger_log_step(float *state, uint8_t action, float reward, float *next_state, uint8_t done, float old_prob)
 {
     if (!g_episode_active) return;
     if (g_episode_turn_count >= EPISODE_MAX_TURNS) {
@@ -35,11 +36,12 @@ void experience_logger_log_step(float *state, uint8_t action, float reward, floa
     }
 
     replay_transition_t *tr = &g_episode_buffer[g_episode_turn_count];
-    memcpy(tr->state, state, sizeof(float) * 16);
+    memcpy(tr->state, state, sizeof(float) * PPO_STATE_SIZE);
     tr->action = action;
     tr->reward = reward;
-    memcpy(tr->next_state, next_state, sizeof(float) * 16);
+    memcpy(tr->next_state, next_state, sizeof(float) * PPO_STATE_SIZE);
     tr->done = done;
+    tr->old_prob = old_prob;
 
     g_episode_turn_count++;
 }

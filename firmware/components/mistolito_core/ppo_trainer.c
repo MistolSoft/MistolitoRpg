@@ -129,10 +129,12 @@ static esp_err_t load_all_chunks(replay_transition_t **out_transitions, uint32_t
     return ESP_OK;
 }
 
-esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
-                           training_progress_t *progress)
+esp_err_t ppo_train_model(policy_head_t *ph, value_head_t *vh, brain_context_e context,
+                           const ppo_config_t *config, training_progress_t *progress)
 {
-    if (!ph || !ph->W || !ph->b) return ESP_ERR_INVALID_STATE;
+    if (!ph || !ph->W || !ph->b || !vh || !vh->W) return ESP_ERR_INVALID_STATE;
+
+    storage_set_active_brain_context(context);
 
     replay_transition_t *transitions = NULL;
     uint32_t total_transitions = 0;
@@ -147,15 +149,8 @@ esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
         return ESP_ERR_INVALID_SIZE;
     }
 
-    ESP_LOGI(TAG, "Training PPO: %lu transitions, %d actions, %d epochs",
-             (unsigned long)total_transitions, ph->num_actions, config->epochs);
-
-    value_head_t vh;
-    if (value_head_init(&vh) != ESP_OK) {
-        PPO_FREE(transitions);
-        return ESP_ERR_NO_MEM;
-    }
-    value_head_load(&vh);
+    ESP_LOGI(TAG, "Training PPO context %d: %lu transitions, %d actions, %d epochs",
+             context, (unsigned long)total_transitions, ph->num_actions, config->epochs);
 
     float *grad_w = PPO_MALLOC(PPO_STATE_SIZE * ph->num_actions * sizeof(float));
     float *grad_b = PPO_MALLOC(ph->num_actions * sizeof(float));
@@ -163,7 +158,6 @@ esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
     float *vel_b = PPO_MALLOC(ph->num_actions * sizeof(float));
 
     if (!grad_w || !grad_b || !vel_w || !vel_b) {
-        value_head_deinit(&vh);
         PPO_FREE(transitions);
         PPO_FREE(grad_w); PPO_FREE(grad_b);
         PPO_FREE(vel_w); PPO_FREE(vel_b);
@@ -198,8 +192,8 @@ esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
 
                 float val_state = 0.0f;
                 float val_next_state = 0.0f;
-                value_head_forward(&vh, state_local, &val_state);
-                value_head_forward(&vh, next_local, &val_next_state);
+                value_head_forward(vh, state_local, &val_state);
+                value_head_forward(vh, next_local, &val_next_state);
 
                 float advantage;
                 if (t->done) {
@@ -208,7 +202,7 @@ esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
                     advantage = t->reward + config->gamma * val_next_state - val_state;
                 }
 
-                float ratio = prob_new / (prob_new + 1e-8f);
+                float ratio = prob_new / (t->old_prob + 1e-8f);
                 float clipped = fmaxf(fminf(ratio, 1.0f + config->clip_coef),
                                       1.0f - config->clip_coef);
 
@@ -271,7 +265,6 @@ esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
         }
     }
 
-    value_head_deinit(&vh);
     PPO_FREE(transitions);
     PPO_FREE(grad_w);
     PPO_FREE(grad_b);
@@ -289,10 +282,8 @@ esp_err_t ppo_train_policy(policy_head_t *ph, const ppo_config_t *config,
     return ESP_OK;
 }
 
-esp_err_t ppo_save_checkpoint(policy_head_t *ph, uint32_t epoch, float loss)
+esp_err_t ppo_save_checkpoint(policy_head_t *ph, uint32_t epoch, float loss, const char *cp_dir)
 {
-    char cp_dir[64];
-    storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
 
     char w_path[128];
     char b_path[128];
@@ -306,7 +297,7 @@ esp_err_t ppo_save_checkpoint(policy_head_t *ph, uint32_t epoch, float loss)
 
     FILE *fw = fopen(w_path, "wb");
     if (!fw) { spi_bus_unlock(); return ESP_FAIL; }
-    fwrite(ph->W, sizeof(float), 9 * ph->num_actions, fw);
+    fwrite(ph->W, sizeof(float), PPO_STATE_SIZE * ph->num_actions, fw);
     fclose(fw);
 
     FILE *fb = fopen(b_path, "wb");
@@ -334,10 +325,8 @@ esp_err_t ppo_save_checkpoint(policy_head_t *ph, uint32_t epoch, float loss)
     return ESP_OK;
 }
 
-esp_err_t ppo_load_checkpoint(policy_head_t *ph, uint32_t epoch)
+esp_err_t ppo_load_checkpoint(policy_head_t *ph, uint32_t epoch, const char *cp_dir)
 {
-    char cp_dir[64];
-    storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
 
     char w_path[128];
     char b_path[128];
@@ -349,7 +338,7 @@ esp_err_t ppo_load_checkpoint(policy_head_t *ph, uint32_t epoch)
 
     FILE *fw = fopen(w_path, "rb");
     if (!fw) { spi_bus_unlock(); return ESP_ERR_NOT_FOUND; }
-    fread(ph->W, sizeof(float), 9 * ph->num_actions, fw);
+    fread(ph->W, sizeof(float), PPO_STATE_SIZE * ph->num_actions, fw);
     fclose(fw);
 
     FILE *fb = fopen(b_path, "rb");
@@ -363,10 +352,8 @@ esp_err_t ppo_load_checkpoint(policy_head_t *ph, uint32_t epoch)
     return ESP_OK;
 }
 
-bool ppo_find_latest_checkpoint(uint32_t *epoch_out)
+bool ppo_find_latest_checkpoint(uint32_t *epoch_out, const char *cp_dir)
 {
-    char cp_dir[64];
-    storage_get_checkpoints_dir(cp_dir, sizeof(cp_dir));
 
     spi_bus_lock();
 

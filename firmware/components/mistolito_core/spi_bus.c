@@ -31,3 +31,20 @@ SemaphoreHandle_t spi_bus_mutex_get(void)
 {
     return spi_mutex;
 }
+
+static volatile bool s_heavy_activity = false;
+
+void spi_bus_suspend_lcd(void)
+{
+    s_heavy_activity = true;
+}
+
+void spi_bus_resume_lcd(void)
+{
+    s_heavy_activity = false;
+}
+
+bool spi_bus_is_heavy_activity(void)
+{
+    return s_heavy_activity;
+}

@@ -41,13 +41,13 @@ esp_err_t value_head_forward(const value_head_t *vh, const float *features, floa
     return ESP_OK;
 }
 
-esp_err_t value_head_load(value_head_t *vh)
+esp_err_t value_head_load(value_head_t *vh, const char *path)
 {
     spi_bus_lock();
-    FILE *f = fopen(VALUE_HEAD_PATH, "rb");
+    FILE *f = fopen(path, "rb");
     if (!f) {
         spi_bus_unlock();
-        ESP_LOGW(TAG, "No value head weights found");
+        ESP_LOGW(TAG, "No value head weights found at %s", path);
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -80,6 +80,45 @@ esp_err_t value_head_load(value_head_t *vh)
     fclose(f);
     spi_bus_unlock();
     vh->loaded = true;
-    ESP_LOGI(TAG, "Loaded value head successfully");
+    ESP_LOGI(TAG, "Loaded value head successfully from %s", path);
+    return ESP_OK;
+}
+
+esp_err_t value_head_save(const value_head_t *vh, uint32_t epoch, const char *path)
+{
+    if (!vh || !vh->W) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    spi_bus_lock();
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        spi_bus_unlock();
+        ESP_LOGE(TAG, "Failed to open %s for writing", path);
+        return ESP_FAIL;
+    }
+
+    uint32_t header[3] = {VALUE_HEAD_MAGIC, VALUE_HEAD_VERSION, epoch};
+    if (fwrite(header, sizeof(uint32_t), 3, f) != 3) {
+        fclose(f);
+        spi_bus_unlock();
+        return ESP_FAIL;
+    }
+
+    if (fwrite(vh->W, sizeof(float), VALUE_HEAD_FEATURE_SIZE, f) != VALUE_HEAD_FEATURE_SIZE) {
+        fclose(f);
+        spi_bus_unlock();
+        return ESP_FAIL;
+    }
+
+    if (fwrite(&vh->b, sizeof(float), 1, f) != 1) {
+        fclose(f);
+        spi_bus_unlock();
+        return ESP_FAIL;
+    }
+
+    fclose(f);
+    spi_bus_unlock();
+    ESP_LOGI(TAG, "Saved value head successfully to %s", path);
     return ESP_OK;
 }

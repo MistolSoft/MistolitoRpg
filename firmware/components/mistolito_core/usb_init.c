@@ -287,7 +287,9 @@ static void handle_dump_replay(const char *params, char *response, size_t resp_l
 
     for (uint8_t a = 1; a <= 10; a++) {
         snprintf(test_path, sizeof(test_path), "/sdcard/BRAIN/COMBAT/replay_a%u/header.bin", a);
-        if (fopen(test_path, "rb")) {
+        FILE *tf = fopen(test_path, "rb");
+        if (tf) {
+            fclose(tf);
             snprintf(found_dir, sizeof(found_dir), "/sdcard/BRAIN/COMBAT/replay_a%u", a);
             ESP_LOGI(TAG, "Found replay data in %s", found_dir);
             break;

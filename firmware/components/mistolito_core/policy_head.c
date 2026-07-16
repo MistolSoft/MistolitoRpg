@@ -1,6 +1,7 @@
 #include "policy_head.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_random.h"
 #include "spi_bus.h"
 #include <string.h>
 #include <math.h>
@@ -67,7 +68,7 @@ esp_err_t policy_head_forward(const policy_head_t *ph, const float *features, fl
         logits[a] = sum;
     }
 
-    ESP_LOGI(TAG, "Logits raw: [%.4f, %.4f, %.4f]", logits[0], logits[1], logits[2]);
+    ESP_LOGD(TAG, "Logits raw: [%.4f, %.4f, %.4f]", logits[0], logits[1], logits[2]);
 
     softmax(logits, scores, ph->num_actions);
 
@@ -94,6 +95,10 @@ esp_err_t policy_head_expand(policy_head_t *ph, uint8_t new_num_actions)
     for (int f = 0; f < POLICY_HEAD_FEATURE_SIZE; f++) {
         for (int a = 0; a < ph->num_actions; a++) {
             new_W[f * new_num_actions + a] = ph->W[f * ph->num_actions + a];
+        }
+        for (int a = ph->num_actions; a < new_num_actions; a++) {
+            uint32_t r = esp_random();
+            new_W[f * new_num_actions + a] = ((float)(r & 0xFFFF) / (float)0xFFFF) * 0.02f - 0.01f;
         }
     }
     memcpy(new_b, ph->b, ph->num_actions * sizeof(float));
@@ -198,7 +203,7 @@ esp_err_t policy_head_load_init(policy_head_t *ph, uint8_t num_actions, const ch
     }
 
     uint8_t read_actions = (file_actions < ph->num_actions) ? file_actions : ph->num_actions;
-    ESP_LOGI(TAG, "Loading init weights: file_actions=%d, active_actions=%d, read_actions=%d",
+    ESP_LOGD(TAG, "Loading init weights: file_a=%d, active_a=%d, read_a=%d",
              file_actions, ph->num_actions, read_actions);
 
     for (int fi = 0; fi < POLICY_HEAD_FEATURE_SIZE; fi++) {
@@ -211,8 +216,7 @@ esp_err_t policy_head_load_init(policy_head_t *ph, uint8_t num_actions, const ch
     fclose(f);
     spi_bus_unlock();
 
-    ESP_LOGI(TAG, "Init weights loaded. W[0..2]=[%.4f, %.4f, %.4f] b=[%.4f, %.4f, %.4f]",
-             ph->W[0], ph->W[1], ph->W[2],
-             ph->b[0], ph->b[1], ph->b[2]);
+    ESP_LOGI(TAG, "Init weights loaded (a=%d): W[0..2]=[%.4f, %.4f, %.4f]",
+             read_actions, ph->W[0], ph->W[1], ph->W[2]);
     return ESP_OK;
 }

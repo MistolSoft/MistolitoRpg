@@ -12,5 +12,6 @@ SemaphoreHandle_t spi_bus_mutex_get(void);
 
 void spi_bus_suspend_lcd(void);
 void spi_bus_resume_lcd(void);
+bool spi_bus_is_heavy_activity(void);
 
 #endif

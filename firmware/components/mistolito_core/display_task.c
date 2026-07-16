@@ -29,7 +29,7 @@ static void handle_usb_commands(void)
         if (byte == '\n' || byte == '\r') {
             if (s_rx_pos > 0) {
                 s_rx_buffer[s_rx_pos] = '\0';
-                ESP_LOGI(TAG, "USB RX: %s", s_rx_buffer);
+                ESP_LOGD(TAG, "USB RX: %s", s_rx_buffer);
 
                 char response[512];
                 usb_process_command(s_rx_buffer, response, sizeof(response));
@@ -64,13 +64,9 @@ static int check_boot_button_press(void)
 
 void display_task_start(void)
 {
-    ESP_LOGI(TAG, "Step 1a: screens_init...");
     screens_init();
-    
-    ESP_LOGI(TAG, "Step 1b: screens_load...");
     screens_load(SCREEN_INIT);
 
-    ESP_LOGI(TAG, "Step 1c: gpio_config...");
     gpio_config_t boot_btn_cfg = {
         .pin_bit_mask = BIT64(BOOT_BUTTON_GPIO),
         .mode = GPIO_MODE_INPUT,
@@ -80,22 +76,16 @@ void display_task_start(void)
     };
     gpio_config(&boot_btn_cfg);
 
-    ESP_LOGI(TAG, "Step 1d: usb_init_driver...");
     usb_init_driver();
-    ESP_LOGI(TAG, "Step 1e: display_task_start done");
+    ESP_LOGI(TAG, "Display init OK");
 }
 
 void display_task(void *arg)
 {
     ESP_LOGI(TAG, "Display task started");
-
-    ESP_LOGI(TAG, "Step 1: calling display_task_start...");
     display_task_start();
-    
-    ESP_LOGI(TAG, "Step 2: calling anim_loops_init...");
     anim_loops_init();
-    
-    ESP_LOGI(TAG, "Step 3: checking USB files...");
+
     game_event_t evt;
     bool game_started = false;
     bool files_ok = usb_check_required_files();
@@ -122,7 +112,7 @@ void display_task(void *arg)
 
         if (usb_is_complete()) {
             if (usb_start_requested()) {
-                ESP_LOGI(TAG, "USB START_LOOP received, starting game...");
+                ESP_LOGD(TAG, "USB START_LOOP received, starting game...");
                 game_started = true;
                 break;
             }
@@ -141,7 +131,7 @@ void display_task(void *arg)
         } else if (press == 2) {
             if (usb_check_required_files()) {
                 if (selection == 1 && has_save) {
-                    ESP_LOGI(TAG, "Wiping save data for new game...");
+                    ESP_LOGD(TAG, "Wiping save data for new game...");
                     storage_queue_wipe_game_data();
                 }
                 ESP_LOGI(TAG, "Starting game...");

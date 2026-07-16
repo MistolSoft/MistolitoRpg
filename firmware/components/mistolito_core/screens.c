@@ -710,9 +710,9 @@ void screens_update(game_snapshot_t *snap)
         ui_dirty_flags |= UI_DIRTY_DP;
     }
 
-    uint32_t total_trans = storage_replay_get_total();
-    uint32_t trans_prev_level = game_coordinator_get_trans_for_level(snap->pet.level - 1);
-    uint32_t trans_for_next = game_coordinator_get_trans_for_level(snap->pet.level);
+    uint32_t total_trans = snap->pet.exp;
+    uint32_t trans_prev_level = 0; // snap->pet.exp se reinicia a 0 en cada nivel
+    uint32_t trans_for_next = game_coordinator_get_trans_for_level(snap->pet.level) - game_coordinator_get_trans_for_level(snap->pet.level - 1);
 
     if (ui_cache.exp != total_trans || ui_cache.exp_next != trans_for_next) {
         ui_cache.exp = total_trans;
@@ -720,6 +720,7 @@ void screens_update(game_snapshot_t *snap)
         ui_cache.exp_prev = trans_prev_level;
         ui_dirty_flags |= UI_DIRTY_EXP;
     }
+
 
     if (ui_cache.profession != snap->pet.profession) {
         ui_cache.profession = snap->pet.profession;

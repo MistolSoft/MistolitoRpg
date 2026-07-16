@@ -30,6 +30,7 @@ static const char *TAG = "STORAGE";
 QueueHandle_t g_storage_queue = NULL;
 static bool g_mounted = false;
 static brain_context_e s_active_context = BRAIN_CTX_COMBAT;
+static volatile bool s_storage_busy = false;
 
 static void replay_build_paths(void);
 
@@ -94,7 +95,7 @@ void storage_task_start(void)
 
     esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
         .format_if_mount_failed = false,
-        .max_files = 5,
+        .max_files = 15,
         .allocation_unit_size = 4096
     };
 
@@ -117,8 +118,10 @@ void storage_task(void *arg)
 
     while (1) {
         if (xQueueReceive(g_storage_queue, &req, portMAX_DELAY) == pdTRUE) {
+            s_storage_busy = true;
             if (!g_mounted) {
                 ESP_LOGW(TAG, "Storage not mounted, skipping operation");
+                s_storage_busy = false;
                 continue;
             }
 
@@ -127,6 +130,8 @@ void storage_task(void *arg)
             switch (req.operation) {
             case STORAGE_OP_SAVE_PET_DELTA:
                 {
+                    mkdir(MOUNT_POINT "/BRAIN", 0755);
+                    mkdir(MOUNT_POINT "/BRAIN/PET", 0755);
                     FILE *f = fopen(MOUNT_POINT "/BRAIN/PET/pet_data.bin", "wb");
                     if (f) {
                         fwrite(req.pet.pet, sizeof(pet_t), 1, f);
@@ -276,6 +281,7 @@ void storage_task(void *arg)
             }
 
             spi_bus_unlock();
+            s_storage_busy = false;
         }
     }
 }
@@ -468,8 +474,6 @@ uint8_t storage_get_random_enemy_id(uint8_t pet_level)
     }
     fclose(f_tier);
 
-    ESP_LOGI(TAG, "Pet level %d -> tier %d", pet_level, valid_tier);
-
     FILE *f_enemy = fopen(MOUNT_POINT "/DATA/TABLES/enemies.bin", "rb");
     if (!f_enemy) {
         spi_bus_unlock();
@@ -490,15 +494,13 @@ uint8_t storage_get_random_enemy_id(uint8_t pet_level)
     fclose(f_enemy);
     spi_bus_unlock();
 
-    ESP_LOGI(TAG, "Found %d enemies for tier %d", count, valid_tier);
-
     if (count == 0) {
         ESP_LOGW(TAG, "No enemies found for tier %d", valid_tier);
         return 0;
     }
 
     uint8_t selected = candidates[esp_random() % count];
-    ESP_LOGI(TAG, "Selected enemy id: %d", selected);
+    ESP_LOGD(TAG, "Enemy sel: lv%d->tier%d found=%d id=%d", pet_level, valid_tier, count, selected);
     return selected;
 }
 
@@ -612,7 +614,7 @@ void storage_derive_dna_stats(dna_t *dna)
     dna_generate_hash(dna);
 
     dna_derive_all_stats(dna, dna->base_stats);
-    dna_derive_intent_unlock(dna);
+    dna_derive_skill_slots(dna);
 
     for (uint8_t i = 0; i < DNA_STAT_COUNT; i++) {
         dna->caps[i] = dna->base_stats[i] + DNA_CAP_OFFSET;
@@ -725,7 +727,7 @@ void storage_replay_init(void)
             if (hf) {
                 fwrite(&g_replay_header, sizeof(replay_header_t), 1, hf);
                 fclose(hf);
-                ESP_LOGI(TAG, "Created replay header for a%u", g_replay_num_actions);
+                ESP_LOGD(TAG, "Created replay header for a%u", g_replay_num_actions);
             }
         }
     }
@@ -734,7 +736,7 @@ void storage_replay_init(void)
 
     spi_bus_unlock();
 
-    ESP_LOGI(TAG, "Replay initialized: a%u, %lu chunks, %lu transitions",
+    ESP_LOGI(TAG, "Replay[a%u]: chunks=%lu transitions=%lu",
              g_replay_num_actions,
              (unsigned long)g_replay_header.total_chunks,
              (unsigned long)g_replay_header.total_transitions);
@@ -840,7 +842,7 @@ void storage_checkpoints_reset(void)
     ESP_LOGI(TAG, "Checkpoints reset complete");
 }
 
-void storage_replay_append(float *state, uint8_t action, float reward, float *next_state, uint8_t done)
+void storage_replay_append(float *state, uint8_t action, float reward, float *next_state, uint8_t done, float old_prob)
 {
     if (g_storage_queue == NULL || !g_replay_initialized) return;
 
@@ -851,6 +853,7 @@ void storage_replay_append(float *state, uint8_t action, float reward, float *ne
     req.replay.transition.reward = reward;
     memcpy(req.replay.transition.next_state, next_state, sizeof(float) * 16);
     req.replay.transition.done = done;
+    req.replay.transition.old_prob = old_prob;
 
     xQueueSend(g_storage_queue, &req, 0);
 }
@@ -1140,4 +1143,12 @@ void storage_queue_wipe_game_data(void)
     req.operation = STORAGE_OP_WIPE_DATA;
     xQueueSend(g_storage_queue, &req, portMAX_DELAY);
     vTaskDelay(pdMS_TO_TICKS(500));
+}
+
+bool storage_is_busy(void)
+{
+    if (g_storage_queue != NULL && uxQueueMessagesWaiting(g_storage_queue) > 0) {
+        return true;
+    }
+    return s_storage_busy;
 }
